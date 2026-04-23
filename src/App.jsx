@@ -1,7 +1,12 @@
 import UmineBattleConsole from "./UmineBattleConsole";
+import PasswordGate from "./PasswordGate";
 
 function App() {
-  return <UmineBattleConsole />;
+  return (
+    <PasswordGate>
+      <UmineBattleConsole />
+    </PasswordGate>
+  );
 }
 
 export default App;
