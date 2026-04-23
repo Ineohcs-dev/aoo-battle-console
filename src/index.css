@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* ── Dark tactical theme base ── */
+:root {
+  color-scheme: dark;
+  --bg-base: #080808;
+  --bg-panel: #0e0e0e;
+  --bg-card: #141414;
+  --bg-surface: #1a1a1a;
+  --border-main: #222;
+  --border-subtle: #1a1a1a;
+  --text-primary: #d4d4d4;
+  --text-secondary: #737373;
+  --text-muted: #404040;
+  --atk-hue: #ef4444;
+  --def-hue: #14b8a6;
+  --gold: #eab308;
+}
+
+html, body, #root {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* Range input dark theme */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 20px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: #333;
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  background: #eab308;
+  border-radius: 50%;
+  margin-top: -5px;
+  border: 2px solid #0a0a0a;
+}
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  background: #333;
+  border-radius: 2px;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 10px; height: 10px;
+  background: #eab308;
+  border-radius: 50%;
+  border: 2px solid #0a0a0a;
+}
+
+/* Number input spinners */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
