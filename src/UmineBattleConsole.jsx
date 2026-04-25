@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { Download, Copy, Send, Plus, Trash2, ChevronDown, ChevronRight, RotateCcw, FileJson, Shield, Swords, Search, X } from "lucide-react";
+import { Download, Copy, Send, Plus, Trash2, ChevronDown, ChevronRight, RotateCcw, FileJson, Shield, Swords, Search, X, Play, Loader2 } from "lucide-react";
 
 /* ============================================================================
  * UMINE // BATTLE CONTROL CONSOLE
@@ -3367,12 +3367,60 @@ function BattleReplay({ onReplayLoad }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────
+// ─── Sim result sub-components ────────────────────────────────────────────────
+
+function SurvivorTable({ title, warriors, accent }) {
+  if (!warriors?.length) return (
+    <div className="flex items-center justify-center h-16 font-mono text-[10px] text-neutral-700 tracking-[0.2em] uppercase">
+      — wiped out —
+    </div>
+  );
+  const total = warriors.reduce((s, w) => s + w.pop_count, 0);
+  const textAccent = accent === "amber" ? "text-amber-600" : "text-teal-600";
+  return (
+    <div>
+      <div className={`font-mono text-[9px] tracking-[0.25em] uppercase mb-1.5 ${textAccent}`}>
+        {title} · <span className="text-neutral-300">{total.toLocaleString()}</span> pop
+      </div>
+      <table className="w-full font-mono text-[10px] border-collapse">
+        <thead>
+          <tr className="text-neutral-600 border-b border-neutral-800">
+            <th className="text-left py-0.5 pr-3 font-normal">wtype</th>
+            <th className="text-right py-0.5 pr-3 font-normal">count</th>
+            <th className="text-right py-0.5 pr-3 font-normal">×pop</th>
+            <th className="text-right py-0.5 font-normal">pop total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {warriors.map((w, i) => (
+            <tr key={i} className="border-b border-neutral-900/60 text-neutral-400 hover:bg-neutral-800/20">
+              <td className="py-0.5 pr-3">wty={w.wtype}</td>
+              <td className="text-right pr-3">{Math.round(w.count).toLocaleString()}</td>
+              <td className="text-right pr-3 text-neutral-600">×{w.pop}</td>
+              <td className="text-right text-neutral-200">{w.pop_count.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
 export default function UmineBattleConsole() {
   const [state, setState] = useState(() => clone(INITIAL_DATA));
   const [showPayload, setShowPayload] = useState(false);
   const [toast, setToast] = useState(null);
   // Level→value lookup tables from replay meta: { atk: {gid: [...]}, def: {gid: [...]} }
   const [lvVals, setLvVals] = useState({ atk: {}, def: {} });
+
+  const SIM_SERVER = import.meta.env.VITE_SIM_SERVER ?? "http://localhost:5000";
+  const [simResult, setSimResult] = useState(null);
+  const [simRunning, setSimRunning] = useState(false);
+  const [simError, setSimError] = useState(null);
+  const [autoRun, setAutoRun] = useState(false);
+  const autoRunTimerRef = useRef(null);
 
   const report = useMemo(() => buildReport(state), [state]);
   const reportJson = useMemo(() => JSON.stringify(report, null, 2), [report]);
@@ -3434,10 +3482,51 @@ export default function UmineBattleConsole() {
     });
   }, []);
 
-  const handleSend = () => {
-    // Simulated send — in a real client this would XOR+msgpack+transmit
-    showToast("SEND stubbed — payload built, download instead");
+  const handleRunSim = async () => {
+    setSimRunning(true);
+    setSimError(null);
+    try {
+      const res = await fetch(`${SIM_SERVER}/simulate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: reportJson,
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Sim failed");
+      setSimResult(data);
+      showToast(`${data.winner.toUpperCase()} wins · ${data.frames} frames`);
+    } catch (e) {
+      setSimError(e.message);
+      showToast("Sim error — is sim_server.py running?");
+    } finally {
+      setSimRunning(false);
+    }
   };
+
+  // Auto-recalculate: fires 1.2 s after any state change when auto mode is on
+  useEffect(() => {
+    if (!autoRun) return;
+    clearTimeout(autoRunTimerRef.current);
+    autoRunTimerRef.current = setTimeout(async () => {
+      setSimRunning(true);
+      setSimError(null);
+      try {
+        const res = await fetch(`${SIM_SERVER}/simulate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(report),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Sim failed");
+        setSimResult(data);
+      } catch (e) {
+        setSimError(e.message);
+      } finally {
+        setSimRunning(false);
+      }
+    }, 1200);
+    return () => clearTimeout(autoRunTimerRef.current);
+  }, [report, autoRun]);
 
   return (
     <div className="min-h-screen bg-[#080808] text-neutral-200" style={{
@@ -3475,9 +3564,18 @@ export default function UmineBattleConsole() {
               className="h-8 px-3 border border-amber-700/60 hover:border-amber-600 bg-amber-950/40 hover:bg-amber-950/60 font-mono text-[10px] uppercase tracking-wider text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1.5">
               <Download size={12} /> Download
             </button>
-            <button onClick={handleSend}
-              className="h-8 px-3 border border-emerald-800/60 hover:border-emerald-600 bg-emerald-950/40 hover:bg-emerald-950/60 font-mono text-[10px] uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1.5">
-              <Send size={12} /> Send
+            <button onClick={() => setAutoRun(a => !a)}
+              title="Auto-recalculate 1.2 s after any change"
+              className={`h-8 px-3 border font-mono text-[10px] uppercase tracking-wider transition-colors flex items-center gap-1.5
+                ${autoRun
+                  ? "border-emerald-700 text-emerald-400 bg-emerald-950/30"
+                  : "border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-200"}`}>
+              Auto
+            </button>
+            <button onClick={handleRunSim} disabled={simRunning}
+              className="h-8 px-3 border border-emerald-800/60 hover:border-emerald-600 bg-emerald-950/40 hover:bg-emerald-950/60 font-mono text-[10px] uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+              {simRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+              {simRunning ? "Running…" : "Run Sim"}
             </button>
           </div>
         </div>
@@ -3516,6 +3614,52 @@ export default function UmineBattleConsole() {
             <pre className="p-3 overflow-auto max-h-[60vh] text-[10px] leading-relaxed text-neutral-500 font-mono">
               {reportJson}
             </pre>
+          </div>
+        </section>
+      )}
+
+      {/* Sim Result */}
+      {(simResult || simError || simRunning) && (
+        <section className="px-4 pb-4">
+          <div className="border border-neutral-800 bg-[#0e0e0e]">
+            {/* Result header */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-neutral-800/30 border-b border-neutral-800">
+              {simRunning
+                ? <Loader2 size={14} className="text-neutral-500 animate-spin" />
+                : <Swords size={14} className={simResult?.winner === "attacker" ? "text-amber-500" : "text-teal-400"} />
+              }
+              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-neutral-300">
+                {simRunning ? "Simulating…" : "Sim Result"}
+              </span>
+              {simResult && !simRunning && (<>
+                <Chip color={simResult.winner === "attacker" ? "amber" : "teal"}>
+                  {simResult.winner.toUpperCase()} wins
+                </Chip>
+                <Chip color="slate">{simResult.frames.toLocaleString()} frames · {simResult.seconds}s</Chip>
+                <Chip color="slate">RNG {simResult.rng_state.toLocaleString()}</Chip>
+              </>)}
+            </div>
+            {/* Error */}
+            {simError && (
+              <div className="px-3 py-2 font-mono text-[11px] text-red-400 border-b border-neutral-800">
+                ⚠ {simError}
+              </div>
+            )}
+            {/* Survivor tables */}
+            {simResult && !simRunning && (
+              <div className="p-3 grid grid-cols-2 gap-6">
+                <SurvivorTable
+                  title="⚔ ATK survivors"
+                  warriors={simResult.attacker_survivors}
+                  accent="amber"
+                />
+                <SurvivorTable
+                  title="🛡 DEF survivors"
+                  warriors={simResult.defender_survivors}
+                  accent="teal"
+                />
+              </div>
+            )}
           </div>
         </section>
       )}
