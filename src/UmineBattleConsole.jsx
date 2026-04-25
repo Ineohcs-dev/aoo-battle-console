@@ -2608,7 +2608,7 @@ const KILL_GROUPS = [
   { key: 'other',   label: 'Other',       tags: ['dot', 'tower', 'gamemode', 'update_spell', 'armor_skill', 'reflect', 'unknown', 'hero_unknown'] },
 ];
 
-function BattleReplay({ onReplayLoad }) {
+function BattleReplay({ externalReplay, onReplayLoad }) {
   // ── State ──
   const [replay, setReplay] = useState(null);       // parsed replay JSON
   const [frame, setFrame] = useState(0);             // current frame index into replay.frames[]
@@ -2657,6 +2657,17 @@ function BattleReplay({ onReplayLoad }) {
     }
     return byTag;
   }, [replay, frame]);
+
+  // ── Load from external sim result (live Run Sim) ──
+  useEffect(() => {
+    if (!externalReplay?.version || !externalReplay?.frames?.length) return;
+    setReplay(externalReplay);
+    setFrame(0);
+    setPlaying(false);
+    setSelectedId(null);
+    setHoveredId(null);
+    onReplayLoad?.(externalReplay);
+  }, [externalReplay]);
 
   // ── Auto-load bundled replay on mount ──
   useEffect(() => {
@@ -3417,6 +3428,7 @@ export default function UmineBattleConsole() {
 
   const SIM_SERVER = import.meta.env.VITE_SIM_SERVER ?? "http://localhost:5000";
   const [simResult, setSimResult] = useState(null);
+  const [simReplay, setSimReplay] = useState(null);
   const [simRunning, setSimRunning] = useState(false);
   const [simError, setSimError] = useState(null);
   const [autoRun, setAutoRun] = useState(false);
@@ -3494,6 +3506,7 @@ export default function UmineBattleConsole() {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "Sim failed");
       setSimResult(data);
+      if (data.replay) setSimReplay(data.replay);
       showToast(`${data.winner.toUpperCase()} wins · ${data.frames} frames`);
     } catch (e) {
       setSimError(e.message);
@@ -3519,6 +3532,7 @@ export default function UmineBattleConsole() {
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || "Sim failed");
         setSimResult(data);
+        if (data.replay) setSimReplay(data.replay);
       } catch (e) {
         setSimError(e.message);
       } finally {
@@ -3590,7 +3604,7 @@ export default function UmineBattleConsole() {
         </div>
 
         {/* Battle Replay Visualization */}
-        <BattleReplay onReplayLoad={handleReplayLoad} />
+        <BattleReplay externalReplay={simReplay} onReplayLoad={handleReplayLoad} />
 
         <div className="w-1/4 shrink-0">
           <PlayerPanel role="defender" data={state.defender} lvVals={lvVals.def}
