@@ -1585,6 +1585,55 @@ const RAW_NUMBER_GIDS = new Set([
   50462916, // Troops Attack Bonus Boost
   50462937, // All Troops Disruptor Resistance
   50462940, // All Troops Misfire Resistance
+  // Titan flat stat boosts (large absolute values, not %)
+  50462864, // Source Spirit HP Boost (flat)
+  50462865, // Source Spirit Attack Boost (flat)
+  50462867, // Empress HP Boost (flat)
+  50462868, // Empress Attack Boost (flat)
+  // Warplane flat stat boosts
+  50462917, // Warplane Attack (flat)
+  50462918, // Warplane HP (flat)
+]);
+
+// ba_tech GIDs that belong visually under Titan Equipment / Empress
+const EMPRESS_TECH_GIDS = new Set([
+  50397391, 50397392, 50397393,  // Empress Attack / Defense / HP Boost (%)
+  50462867, 50462868, 50462869,  // Empress HP / Attack / Defense Boost (flat)
+]);
+
+// ba_tech GIDs that belong visually under Titan Equipment / Source Spirit
+const BISON_TECH_GIDS = new Set([
+  50397388, 50397389, 50397390,  // Source Spirit Attack / Defense / HP Boost (%)
+  50462864, 50462865, 50462866,  // Source Spirit HP / Attack / Defense Boost (flat)
+]);
+
+// ba_tech GIDs that belong visually under Warplane Equipment
+const WARPLANE_TECH_GIDS = new Set([
+  50397462, 50397463, 50397464,  // Warplane Attack / HP / Defense Boost (%)
+  50397465, 50397466, 50397467,  // Warplane Dodge vs Mid / Long / Melee (%)
+  50462917, 50462918, 50462919,  // Warplane Attack / HP / Defense (flat)
+]);
+
+// GIDs that directly consume RNG during battle — highlighted yellow in the UI.
+//  • Block GIDs              — RateRandom() called per hit
+//  • Check spells            — spell_random() called per attack trigger
+//  • Random-target hero spells — random_int() called at spell fire
+const RNG_GIDS = new Set([
+  // Block (RateRandom per hit)
+  50462930, 50397507,                      // All Troops Block (flat + rate/1000)
+  50462931, 50462932, 50462933, 50462934,  // Per-row block (Near/Mid/Far/Bio)
+  // Check spells (spell_random on each attack)
+  50397452, 50397455,                      // Electrocution proc + rate booster
+  50397456, 50397457,                      // Shield conditional checks
+  50397494,                                // Advanced Ammo (top-2 attack proc)
+  // Attack-check spells (fired during warrior attack)
+  50397431, 50397503,                      // Rapid Strike (DoubleAttack + plus-GID)
+  50397449, 50397502,                      // Tactical Block (4SubDamage + plus-GID)
+  50397458, 50397504,                      // Weakness Blitz (Execute + plus-GID)
+  // Hero spells with random_int target selection
+  50462844,                                // EMP Bomb (3 random consecutive targets)
+  50462929,                                // Energy Prison (random target)
+  50462948,                                // Energy Blade (4 random targets)
 ]);
 
 const BA_TECH_OPTIONS = _buildOptions(
@@ -1633,6 +1682,11 @@ const FIGHTER_OPTIONS = _buildOptions(
 
 // Set of all titan-slot GIDs — these belong under Titan Equipment, never in ba_tech list
 const TITAN_SLOT_GID_SET = new Set(TITAN_OPTIONS.map(o => o.gid));
+
+// byte 20 = Empress display (bison variable) → "Bison —" group GIDs
+// byte 21 = Bison display (empress variable) → "Empress —" group GIDs
+const TITAN_EMPRESS_OPTS = TITAN_OPTIONS.filter(o => o.group.startsWith("Bison —"));
+const TITAN_BISON_OPTS   = TITAN_OPTIONS.filter(o => o.group.startsWith("Empress —"));
 
 // Officer Breakthrough Skills picker options — built from the dedicated GID set.
 // Each entry carries the same shape as other *_OPTIONS arrays for reuse in GidPicker.
@@ -1877,7 +1931,7 @@ const ACCENT = {
   teal:  { border: "border-teal-800/60",  hoverBorder: "hover:border-teal-600",  text: "text-teal-400", bg: "bg-teal-950/50",  hoverBg: "hover:bg-teal-950/30",   dashed: "border-teal-800/50 hover:border-teal-600 text-teal-400 hover:text-teal-300" },
 };
 
-function GidPicker({ value, onChange, options, accent = "amber", placeholder = "Select…", variant = "inline", addLabel }) {
+function GidPicker({ value, onChange, options, accent = "amber", placeholder = "Select…", variant = "inline", addLabel, highlight = false }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef(null);
@@ -1935,7 +1989,7 @@ function GidPicker({ value, onChange, options, accent = "amber", placeholder = "
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group w-full text-left font-mono text-[10px] px-2 py-1 border border-neutral-700 ${A.hoverBorder} bg-[#0a0a0a] text-neutral-300 flex items-center justify-between gap-1 overflow-hidden`}
+        className={`group w-full text-left font-mono text-[10px] px-2 py-1 border border-neutral-700 ${A.hoverBorder} bg-[#0a0a0a] ${highlight ? "text-yellow-400" : "text-neutral-300"} flex items-center justify-between gap-1 overflow-hidden`}
         title={current?.name || placeholder}
       >
         <span className="truncate min-w-0 flex-1">
@@ -2011,12 +2065,14 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
   const { bison, empress } = useMemo(() => parseTitanBi(data.titan_b_i), [data.titan_b_i]);
   // Display-only sort of ba_tech by GID ascending; state order preserved for payload fidelity.
   // Filters out titan-slot GIDs (→ Titan Equipment), officer breakthrough GIDs (→ own section),
-  // per-row block GIDs and the two combined-block GIDs (→ single "All Troops Block" row).
+  // per-row block GIDs, the two combined-block GIDs (→ "All Troops Block" row),
+  // and titan/warplane stat GIDs that are now shown in their equipment panels.
   const sortedBaTech = useMemo(
     () => data.ba_tech
       .map((t, origIdx) => ({ ...t, origIdx }))
       .filter((t) => !TITAN_SLOT_GID_SET.has(t.gid) && !OFFICER_BREAKTHROUGH_GIDS.has(t.gid)
-        && !PER_ROW_BLOCK_GIDS.has(t.gid) && t.gid !== BLOCK_FLAT_GID && t.gid !== BLOCK_RATE_GID)
+        && !PER_ROW_BLOCK_GIDS.has(t.gid) && t.gid !== BLOCK_FLAT_GID && t.gid !== BLOCK_RATE_GID
+        && !EMPRESS_TECH_GIDS.has(t.gid) && !BISON_TECH_GIDS.has(t.gid) && !WARPLANE_TECH_GIDS.has(t.gid))
       .sort((a, b) => a.gid - b.gid),
     [data.ba_tech]
   );
@@ -2028,14 +2084,6 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
     return (flat ? flat.value : 0) + (rate ? rate.value / 1000 : 0);
   }, [data.ba_tech]);
 
-  // Officer Breakthrough Skills: the subset of ba_tech matching OFFICER_BREAKTHROUGH_GIDS.
-  const sortedOfficerSkills = useMemo(
-    () => data.ba_tech
-      .map((t, origIdx) => ({ ...t, origIdx }))
-      .filter((t) => OFFICER_BREAKTHROUGH_GIDS.has(t.gid))
-      .sort((a, b) => a.gid - b.gid),
-    [data.ba_tech]
-  );
 
   // Read/write ba_tech value by GID (used by Titan Equipment rows for their Value column).
   const getBaTechValue = (gid) => {
@@ -2059,13 +2107,6 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
     } else {
       update({ ba_tech: [...data.ba_tech, { gid, value }] });
     }
-  };
-
-  const updateTitan = (side, idx, field, val) => {
-    const next = side === "bison" ? [...bison] : [...empress];
-    next[idx] = { ...next[idx], [field]: val };
-    const flat = flattenTitanBi(side === "bison" ? next : bison, side === "empress" ? next : empress);
-    update({ titan_b_i: flat });
   };
 
   return (
@@ -2158,7 +2199,6 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
             <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1 sticky top-0 bg-[#0e0e0e] py-1 z-10">
               <div className="flex-1 min-w-0">Stat</div>
               <div className="w-28 shrink-0">Value</div>
-              <div className="w-7 shrink-0"></div>
             </div>
             {sortedBaTech.map((t) => {
               const i = t.origIdx;
@@ -2170,6 +2210,7 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
                     value={t.gid}
                     options={BA_TECH_OPTIONS}
                     accent={accent}
+                    highlight={RNG_GIDS.has(t.gid)}
                     onChange={(v) => {
                       const next = [...data.ba_tech]; next[i] = { ...data.ba_tech[i], gid: v }; update({ ba_tech: next });
                     }}
@@ -2189,10 +2230,6 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
                     </div>
                   )}
                 </div>
-                <button onClick={() => update({ ba_tech: data.ba_tech.filter((_, j) => j !== i) })}
-                  className="h-7 w-7 shrink-0 flex items-center justify-center border border-neutral-700 hover:border-red-600 hover:text-red-400 text-neutral-600 transition-colors">
-                  <Trash2 size={12} />
-                </button>
               </div>
               );
             })}
@@ -2201,241 +2238,231 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
               <div className="flex items-center gap-1.5 pt-1.5 mt-1 border-t border-neutral-800/60">
                 <div className="flex-1 min-w-0 font-mono text-[10px] text-amber-400/80 px-1">All Troops Block</div>
                 <div className="w-28 shrink-0 font-mono text-[11px] text-neutral-300 px-2">{+combinedBlock.toFixed(3)}</div>
-                <div className="w-7 shrink-0"></div>
               </div>
             )}
-            <div className="pt-1">
-              <GidPicker
-                value={null}
-                options={BA_TECH_OPTIONS}
-                accent={accent}
-                variant="add"
-                addLabel="Add Stat"
-                onChange={(gid) => update({ ba_tech: [...data.ba_tech, { gid, value: 100 }] })}
-              />
-            </div>
           </div>
         </Section>
 
         {/* Officer Breakthrough Skills */}
-        <Section title="Officer Breakthrough Skills" count={sortedOfficerSkills.length} defaultOpen={false} accent={accent}>
+        <Section title="Officer Breakthrough Skills" count={OFFICER_OPTIONS.length} defaultOpen={false} accent={accent}>
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1">
               <div className="flex-1 min-w-0">Skill</div>
               <div className="w-14 shrink-0">Lv</div>
               <div className="w-24 shrink-0">Value</div>
-              <div className="w-7 shrink-0"></div>
             </div>
-            {sortedOfficerSkills.map((t) => {
-              const i = t.origIdx;
-              const currentLevel = t.level ?? 0;
+            {OFFICER_OPTIONS.map((opt) => {
+              const entry = data.ba_tech.find(t => t.gid === opt.gid);
+              const isPresent = !!entry;
+              const currentLevel = entry?.level ?? 0;
+              // 0 = not unlocked; 1-based when present
+              const displayLevel = isPresent ? currentLevel + 1 : 0;
               return (
-                <div key={i} className="flex items-center gap-1.5">
-                  <div className="flex-1 min-w-0">
-                    <GidPicker
-                      value={t.gid}
-                      options={OFFICER_OPTIONS}
-                      accent={accent}
-                      onChange={(v) => {
-                        const newLevel = 0;
-                        const newValue = getLevelValue(v, newLevel);
-                        const next = [...data.ba_tech];
-                        next[i] = { gid: v, value: newValue, level: newLevel };
-                        update({ ba_tech: next });
-                      }}
-                    />
+                <div key={opt.gid} className="flex items-center gap-1.5">
+                  <div className={`flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate ${!isPresent ? "text-neutral-600" : RNG_GIDS.has(opt.gid) ? "text-yellow-400" : "text-neutral-300"}`}
+                    title={opt.name}>
+                    {opt.name}
                   </div>
                   <div className="w-14 shrink-0">
                     <NumInput
-                      value={currentLevel + 1}
-                      min={1}
+                      value={displayLevel}
+                      min={0}
                       onChange={v => {
-                        const newLevel = Math.max(0, v - 1);
-                        const newValue = getLevelValue(t.gid, newLevel);
-                        const next = [...data.ba_tech];
-                        next[i] = { ...data.ba_tech[i], level: newLevel, value: newValue };
-                        update({ ba_tech: next });
+                        if (v <= 0) {
+                          // Remove from ba_tech (unlocking at 0 = not active)
+                          update({ ba_tech: data.ba_tech.filter(t => t.gid !== opt.gid) });
+                        } else {
+                          const newLevel = v - 1;
+                          const newValue = getLevelValue(opt.gid, newLevel);
+                          const idx = data.ba_tech.findIndex(t => t.gid === opt.gid);
+                          if (idx >= 0) {
+                            const next = [...data.ba_tech];
+                            next[idx] = { ...next[idx], level: newLevel, value: newValue };
+                            update({ ba_tech: next });
+                          } else {
+                            update({ ba_tech: [...data.ba_tech, { gid: opt.gid, value: newValue, level: newLevel }] });
+                          }
+                        }
                       }}
                     />
                   </div>
                   <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">
-                    {getLevelValue(t.gid, currentLevel)}
+                    {isPresent ? getLevelValue(opt.gid, currentLevel) : 0}
                   </div>
-                  <button onClick={() => update({ ba_tech: data.ba_tech.filter((_, j) => j !== i) })}
-                    className="h-7 w-7 shrink-0 flex items-center justify-center border border-neutral-700 hover:border-red-600 hover:text-red-400 text-neutral-600 transition-colors">
-                    <Trash2 size={12} />
-                  </button>
                 </div>
               );
             })}
-            <div className="pt-1">
-              <GidPicker
-                value={null}
-                options={OFFICER_OPTIONS}
-                accent={accent}
-                variant="add"
-                addLabel="Add Officer Skill"
-                onChange={(gid) => {
-                  const table = lvVals[String(gid)];
-                  const newValue = (table && table.length > 0) ? table[0] : 100;
-                  update({ ba_tech: [...data.ba_tech, { gid, value: newValue, level: 0 }] });
-                }}
-              />
-            </div>
           </div>
         </Section>
 
         {/* Titan Equipment */}
-        <Section title="Titan Equipment" count={bison.length + empress.length} defaultOpen={false} accent={accent}>
+        <Section title="Titan Equipment" count={TITAN_EMPRESS_OPTS.length + TITAN_BISON_OPTS.length} defaultOpen={false} accent={accent}>
           <div className="space-y-3">
-            {/* NOTE: `bison` holds data written under titan_b_i byte 20; `empress` under byte 21.
-                In-game those byte codes represent the OPPOSITE titans, so labels below are swapped
-                relative to the internal variable names to match what players actually see. */}
-            <div>
-              <div className="font-mono text-[10px] text-amber-500 uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                <span className="w-4 h-[1px] bg-amber-600" /> Empress
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1">
-                  <div className="flex-1 min-w-0">Equipment</div>
-                  <div className="w-14 shrink-0">Lv</div>
-                  <div className="w-24 shrink-0">Value</div>
-                  <div className="w-7 shrink-0"></div>
+            {/* NOTE: bison (byte 20) displays as Empress; empress (byte 21) displays as Bison — swapped. */}
+            {[
+              { label: "Empress", opts: TITAN_EMPRESS_OPTS, arr: bison,   setArr: (next) => update({ titan_b_i: flattenTitanBi(next, empress) }), clr: "text-amber-500", bar: "bg-amber-600", statGids: EMPRESS_TECH_GIDS },
+              { label: "Bison",   opts: TITAN_BISON_OPTS,   arr: empress, setArr: (next) => update({ titan_b_i: flattenTitanBi(bison, next) }),   clr: "text-red-400",   bar: "bg-red-500",   statGids: BISON_TECH_GIDS   },
+            ].map(({ label, opts, arr, setArr, clr, bar, statGids }) => (
+              <div key={label}>
+                <div className={`font-mono text-[10px] ${clr} uppercase tracking-widest mb-1.5 flex items-center gap-2`}>
+                  <span className={`w-4 h-[1px] ${bar}`} /> {label}
                 </div>
-                {bison.map((e, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <div className="flex-1 min-w-0">
-                      <GidPicker
-                        value={e.gid}
-                        options={TITAN_OPTIONS}
-                        accent={accent}
-                        onChange={(v) => updateTitan("bison", i, "gid", v)}
-                      />
-                    </div>
-                    <div className="w-14 shrink-0">
-                      <NumInput value={e.level + 1} min={1} onChange={v => updateTitan("bison", i, "level", Math.max(0, v - 1))} />
-                    </div>
-                    <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">{getLevelValue(e.gid, e.level)}</div>
-                    <button onClick={() => {
-                      const next = bison.filter((_, j) => j !== i);
-                      update({ titan_b_i: flattenTitanBi(next, empress) });
-                    }}
-                      className="h-7 w-7 shrink-0 flex items-center justify-center border border-neutral-700 hover:border-red-600 hover:text-red-400 text-neutral-600 transition-colors">
-                      <Trash2 size={12} />
-                    </button>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1">
+                    <div className="flex-1 min-w-0">Equipment</div>
+                    <div className="w-14 shrink-0">Lv</div>
+                    <div className="w-24 shrink-0">Value</div>
                   </div>
-                ))}
-                <div className="pt-1">
-                  <GidPicker
-                    value={null}
-                    options={TITAN_OPTIONS}
-                    accent={accent}
-                    variant="add"
-                    addLabel="Add Empress Slot"
-                    onChange={(gid) => {
-                      const next = [...bison, { gid, level: 0 }];
-                      update({ titan_b_i: flattenTitanBi(next, empress) });
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-            <div>
-              <div className="font-mono text-[10px] text-red-400 uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                <span className="w-4 h-[1px] bg-red-500" /> Bison
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1">
-                  <div className="flex-1 min-w-0">Equipment</div>
-                  <div className="w-14 shrink-0">Lv</div>
-                  <div className="w-24 shrink-0">Value</div>
-                  <div className="w-7 shrink-0"></div>
-                </div>
-                {empress.map((e, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <div className="flex-1 min-w-0">
-                      <GidPicker
-                        value={e.gid}
-                        options={TITAN_OPTIONS}
-                        accent={accent}
-                        onChange={(v) => updateTitan("empress", i, "gid", v)}
-                      />
-                    </div>
-                    <div className="w-14 shrink-0">
-                      <NumInput value={e.level + 1} min={1} onChange={v => updateTitan("empress", i, "level", Math.max(0, v - 1))} />
-                    </div>
-                    <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">{getLevelValue(e.gid, e.level)}</div>
-                    <button onClick={() => {
-                      const next = empress.filter((_, j) => j !== i);
-                      update({ titan_b_i: flattenTitanBi(bison, next) });
-                    }}
-                      className="h-7 w-7 shrink-0 flex items-center justify-center border border-neutral-700 hover:border-red-600 hover:text-red-400 text-neutral-600 transition-colors">
-                      <Trash2 size={12} />
-                    </button>
+                  {opts.map((opt) => {
+                    const entry = arr.find(e => e.gid === opt.gid);
+                    const isPresent = !!entry;
+                    const currentLevel = entry?.level ?? 0;
+                    const displayLevel = isPresent ? currentLevel + 1 : 0;
+                    return (
+                      <div key={opt.gid} className="flex items-center gap-1.5">
+                        <div className={`flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate ${isPresent ? "text-neutral-300" : "text-neutral-600"}`}
+                          title={opt.name}>
+                          {opt.name}
+                        </div>
+                        <div className="w-14 shrink-0">
+                          <NumInput value={displayLevel} min={0} onChange={v => {
+                            if (v <= 0) {
+                              setArr(arr.filter(e => e.gid !== opt.gid));
+                            } else {
+                              const newLevel = v - 1;
+                              const next = isPresent
+                                ? arr.map(e => e.gid === opt.gid ? { ...e, level: newLevel } : e)
+                                : [...arr, { gid: opt.gid, level: newLevel }];
+                              setArr(next);
+                            }
+                          }} />
+                        </div>
+                        <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">
+                          {isPresent ? getLevelValue(opt.gid, currentLevel) : 0}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* Titan stat boosts from ba_tech */}
+                  <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1 pt-1 mt-1 border-t border-neutral-800">
+                    <div className="flex-1 min-w-0">Stat</div>
+                    <div className="w-14 shrink-0" />
+                    <div className="w-24 shrink-0">Value</div>
                   </div>
-                ))}
-                <div className="pt-1">
-                  <GidPicker
-                    value={null}
-                    options={TITAN_OPTIONS}
-                    accent={accent}
-                    variant="add"
-                    addLabel="Add Bison Slot"
-                    onChange={(gid) => {
-                      const next = [...empress, { gid, level: 0 }];
-                      update({ titan_b_i: flattenTitanBi(bison, next) });
-                    }}
-                  />
+                  {[...statGids].map((gid) => {
+                    const isRaw = RAW_NUMBER_GIDS.has(gid);
+                    const raw = getBaTechValue(gid);
+                    const display = isRaw ? raw : raw / 10;
+                    const name = GID_NAMES[gid] || `GID ${gid}`;
+                    return (
+                      <div key={gid} className="flex items-center gap-1.5">
+                        <div className="flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate text-neutral-300" title={name}>
+                          {name}
+                        </div>
+                        <div className="w-14 shrink-0" />
+                        <div className="w-24 shrink-0">
+                          {isRaw ? (
+                            <NumInput
+                              value={display}
+                              step={1}
+                              onChange={v => setBaTechValue(gid, Math.round(v))}
+                            />
+                          ) : (
+                            <div className="flex items-center gap-0.5">
+                              <NumInput
+                                value={display}
+                                step={0.1}
+                                onChange={v => setBaTechValue(gid, Math.round(v * 10))}
+                              />
+                              <span className="text-neutral-600 text-[9px] font-mono shrink-0">%</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
+            ))}
           </div>
         </Section>
 
         {/* Warplane Equipment */}
-        <Section title="Warplane Equipment" count={data.fighter_eq.length} defaultOpen={false} accent={accent}>
+        <Section title="Warplane Equipment" count={FIGHTER_OPTIONS.length} defaultOpen={false} accent={accent}>
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1">
               <div className="flex-1 min-w-0">Equipment</div>
               <div className="w-14 shrink-0">Lv</div>
               <div className="w-24 shrink-0">Value</div>
-              <div className="w-7 shrink-0"></div>
             </div>
-            {data.fighter_eq.map((e, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <div className="flex-1 min-w-0">
-                  <GidPicker
-                    value={e.gid}
-                    options={FIGHTER_OPTIONS}
-                    accent={accent}
-                    onChange={(v) => {
-                      const next = [...data.fighter_eq]; next[i] = { ...e, gid: v }; update({ fighter_eq: next });
-                    }}
-                  />
+            {FIGHTER_OPTIONS.map((opt) => {
+              const entry = data.fighter_eq.find(e => e.gid === opt.gid);
+              const isPresent = !!entry;
+              const currentLevel = entry?.level ?? 0;
+              const displayLevel = isPresent ? currentLevel + 1 : 0;
+              return (
+                <div key={opt.gid} className="flex items-center gap-1.5">
+                  <div className={`flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate ${isPresent ? "text-neutral-300" : "text-neutral-600"}`}
+                    title={opt.name}>
+                    {opt.name}
+                  </div>
+                  <div className="w-14 shrink-0">
+                    <NumInput value={displayLevel} min={0} onChange={v => {
+                      if (v <= 0) {
+                        update({ fighter_eq: data.fighter_eq.filter(e => e.gid !== opt.gid) });
+                      } else {
+                        const newLevel = v - 1;
+                        const next = isPresent
+                          ? data.fighter_eq.map(e => e.gid === opt.gid ? { ...e, level: newLevel } : e)
+                          : [...data.fighter_eq, { gid: opt.gid, level: newLevel }];
+                        update({ fighter_eq: next });
+                      }
+                    }} />
+                  </div>
+                  <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">
+                    {isPresent ? getLevelValue(opt.gid, currentLevel) : 0}
+                  </div>
                 </div>
-                <div className="w-14 shrink-0">
-                  <NumInput value={e.level + 1} min={1} onChange={v => {
-                    const newLevel = Math.max(0, v - 1);
-                    const next = [...data.fighter_eq]; next[i] = { ...e, level: newLevel }; update({ fighter_eq: next });
-                  }} />
-                </div>
-                <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">{getLevelValue(e.gid, e.level)}</div>
-                <button onClick={() => update({ fighter_eq: data.fighter_eq.filter((_, j) => j !== i) })}
-                  className="h-7 w-7 shrink-0 flex items-center justify-center border border-neutral-700 hover:border-red-600 hover:text-red-400 text-neutral-600 transition-colors">
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
-            <div className="pt-1">
-              <GidPicker
-                value={null}
-                options={FIGHTER_OPTIONS}
-                accent={accent}
-                variant="add"
-                addLabel="Add Warplane Slot"
-                onChange={(gid) => update({ fighter_eq: [...data.fighter_eq, { gid, level: 0 }] })}
-              />
+              );
+            })}
+            {/* Warplane stat boosts from ba_tech */}
+            <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1 pt-1 mt-1 border-t border-neutral-800">
+              <div className="flex-1 min-w-0">Stat</div>
+              <div className="w-14 shrink-0" />
+              <div className="w-24 shrink-0">Value</div>
             </div>
+            {[...WARPLANE_TECH_GIDS].map((gid) => {
+              const isRaw = RAW_NUMBER_GIDS.has(gid);
+              const raw = getBaTechValue(gid);
+              const display = isRaw ? raw : raw / 10;
+              const name = GID_NAMES[gid] || `GID ${gid}`;
+              return (
+                <div key={gid} className="flex items-center gap-1.5">
+                  <div className="flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate text-neutral-300" title={name}>
+                    {name}
+                  </div>
+                  <div className="w-14 shrink-0" />
+                  <div className="w-24 shrink-0">
+                    {isRaw ? (
+                      <NumInput
+                        value={display}
+                        step={1}
+                        onChange={v => setBaTechValue(gid, Math.round(v))}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-0.5">
+                        <NumInput
+                          value={display}
+                          step={0.1}
+                          onChange={v => setBaTechValue(gid, Math.round(v * 10))}
+                        />
+                        <span className="text-neutral-600 text-[9px] font-mono shrink-0">%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Section>
       </div>
@@ -3600,7 +3627,7 @@ export default function UmineBattleConsole() {
       <main className="p-4 flex gap-4 items-start">
         <div className="w-1/4 shrink-0">
           <PlayerPanel role="attacker" data={state.attacker} lvVals={lvVals.atk}
-            onChange={(p) => setState({ ...state, attacker: p })} />
+            onChange={(p) => setState(prev => ({ ...prev, attacker: p }))} />
         </div>
 
         {/* Battle Replay Visualization */}
@@ -3608,7 +3635,7 @@ export default function UmineBattleConsole() {
 
         <div className="w-1/4 shrink-0">
           <PlayerPanel role="defender" data={state.defender} lvVals={lvVals.def}
-            onChange={(p) => setState({ ...state, defender: p })} />
+            onChange={(p) => setState(prev => ({ ...prev, defender: p }))} />
         </div>
       </main>
 
