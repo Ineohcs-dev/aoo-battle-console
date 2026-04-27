@@ -1636,6 +1636,17 @@ const RNG_GIDS = new Set([
   50462948,                                // Energy Blade (4 random targets)
 ]);
 
+// Troop GIDs whose intrinsic armor skill / bio spell consumes RNG during battle:
+//   • "02. Middle — Moto"   (wtype=3, RocketMan) — RocketMan_ExtraHit fires a second
+//     DoDamage per attack cycle, adding an extra RateRandom (block check) call.
+//   • "02. Middle — BioTech" (wtype=70)           — BioTechSpell_ReduceTitanAttack
+//     uses RandomInt to randomly pick between Empress and Bison as target.
+const RNG_ARMY_GID_SET = new Set(
+  ARMY_OPTIONS
+    .filter(o => o.group === "02. Middle — Moto" || o.group === "02. Middle — BioTech")
+    .map(o => o.gid)
+);
+
 const BA_TECH_OPTIONS = _buildOptions(
   (g) => (g >= 50397000 && g <= 50463000) && !OFFICER_BREAKTHROUGH_GIDS.has(g),
   (g) => {
@@ -2155,6 +2166,7 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
                     value={w.gid}
                     options={ARMY_OPTIONS}
                     accent={accent}
+                    highlight={RNG_ARMY_GID_SET.has(w.gid)}
                     onChange={(v) => {
                       const next = [...data.warrs]; next[i] = { ...w, gid: v }; update({ warrs: next });
                     }}
