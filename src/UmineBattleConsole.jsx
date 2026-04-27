@@ -1657,6 +1657,27 @@ const RNG_ARMY_GID_SET = new Set(
     .map(o => o.gid)
 );
 
+// Display sort order for Army Composition (view-only; warrs payload order preserved).
+// Priority: Front (Melee) → Mid (Mid-range) → Zombies → Back (Long-range) →
+//           Source Spirit → Empress → Warplanes
+const ARMY_GID_SORT_KEY = (() => {
+  const m = {};
+  for (const o of ARMY_OPTIONS) {
+    if (o.gid in m) continue;
+    let p;
+    if      (o.group.startsWith("01. Front"))                p = 0;  // Melee row
+    else if (o.group === "02. Middle — WPSkin_Warrior")      p = 2;  // Zombies (separate from Mid)
+    else if (o.group.startsWith("02. Middle"))               p = 1;  // Mid-range row
+    else if (o.group.startsWith("03. Back"))                 p = 3;  // Long-range row
+    else if (o.group.startsWith("04. Titans — Bison"))       p = 4;  // Source Spirit
+    else if (o.group.startsWith("04. Titans — Empress"))     p = 5;  // Empress
+    else if (o.group.startsWith("05."))                      p = 6;  // Warplanes
+    else                                                     p = 7;
+    m[o.gid] = p;
+  }
+  return m;
+})();
+
 const BA_TECH_OPTIONS = _buildOptions(
   (g) => (g >= 50397000 && g <= 50463000) && !OFFICER_BREAKTHROUGH_GIDS.has(g),
   (g) => {
@@ -2105,6 +2126,13 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
     return (flat ? flat.value : 0) + (rate ? rate.value / 1000 : 0);
   }, [data.ba_tech]);
 
+  // Display-only sort of warrs by row/type; warrs array order preserved for payload fidelity.
+  const sortedWarrs = useMemo(
+    () => data.warrs
+      .map((w, origIdx) => ({ ...w, origIdx }))
+      .sort((a, b) => (ARMY_GID_SORT_KEY[a.gid] ?? 7) - (ARMY_GID_SORT_KEY[b.gid] ?? 7)),
+    [data.warrs]
+  );
 
   // Read/write ba_tech value by GID (used by Titan Equipment rows for their Value column).
   const getBaTechValue = (gid) => {
@@ -2166,7 +2194,8 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
               <div className="w-20 shrink-0 text-right">Population</div>
               <div className="w-7 shrink-0"></div>
             </div>
-            {data.warrs.map((w, i) => {
+            {sortedWarrs.map((w) => {
+              const i = w.origIdx;
               const unitPop = popOf(w.gid);
               const rowPop = Math.round(w.count * unitPop);
               return (
