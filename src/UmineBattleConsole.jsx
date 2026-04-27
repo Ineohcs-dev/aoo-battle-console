@@ -1636,14 +1636,24 @@ const RNG_GIDS = new Set([
   50462948,                                // Energy Blade (4 random targets)
 ]);
 
-// Troop GIDs whose intrinsic armor skill / bio spell consumes RNG during battle:
-//   • "02. Middle — Moto"   (wtype=3, RocketMan) — RocketMan_ExtraHit fires a second
-//     DoDamage per attack cycle, adding an extra RateRandom (block check) call.
-//   • "02. Middle — BioTech" (wtype=70)           — BioTechSpell_ReduceTitanAttack
+// Troop GIDs whose intrinsic skill consumes RNG during battle.
+// Only ByChance (c_t=1) skills call battle_random.random(); ByCount skills are deterministic.
+//   • "01. Front — ShieldCar" (wtype=5, Tanks)           — attackee skill, 31% chance to
+//     block 50% of incoming damage (SkillEffectType.Block, cast_chance=0.31).
+//   • "01. Front — Drone"     (wtype=9, Armored Soldiers) — attackee skill, 35% chance to
+//     reflect 20% of incoming damage back (SkillEffectType.RefDamage, cast_chance=0.35).
+//   • "02. Middle — Moto"     (wtype=3, RocketMan)        — RocketMan_ExtraHit armor skill
+//     fires a second DoDamage per attack cycle (extra RNG interaction on target).
+//   • "02. Middle — BioTech"  (wtype=70)                  — BioTechSpell_ReduceTitanAttack
 //     uses RandomInt to randomly pick between Empress and Bison as target.
 const RNG_ARMY_GID_SET = new Set(
   ARMY_OPTIONS
-    .filter(o => o.group === "02. Middle — Moto" || o.group === "02. Middle — BioTech")
+    .filter(o =>
+      o.group === "01. Front — ShieldCar" ||   // wtype=5, 31% ByChance Block attackee skill
+      o.group === "01. Front — Drone"     ||   // wtype=9, 35% ByChance RefDamage attackee skill
+      o.group === "02. Middle — Moto"     ||   // wtype=3, ExtraHit armor skill
+      o.group === "02. Middle — BioTech"       // wtype=70, ReduceTitanAttack RandomInt
+    )
     .map(o => o.gid)
 );
 
