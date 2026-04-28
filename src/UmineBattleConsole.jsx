@@ -1678,6 +1678,17 @@ const ARMY_GID_SORT_KEY = (() => {
   return m;
 })();
 
+// GIDs that are never varied in formation testing: titans, warplanes, robot bots
+const FORMATION_FIXED_GID_SET = new Set(
+  ARMY_OPTIONS
+    .filter(o =>
+      o.group.startsWith("04. Titans") ||
+      o.group.startsWith("05.")        ||
+      o.group === "01. Front — WarPlane_Bot"
+    )
+    .map(o => o.gid)
+);
+
 const BA_TECH_OPTIONS = _buildOptions(
   (g) => (g >= 50397000 && g <= 50463000) && !OFFICER_BREAKTHROUGH_GIDS.has(g),
   (g) => {
@@ -2095,8 +2106,258 @@ function GidPicker({ value, onChange, options, accent = "amber", placeholder = "
   );
 }
 
+// ─── Formation Tester ─────────────────────────────────────────────────────
+function FormationTester({ attData, baseReport, simServer, onApply }) {
+  const initPool = () =>
+    attData.warrs
+      .filter(w => !FORMATION_FIXED_GID_SET.has(w.gid))
+      .map(w => w.gid);
+
+  const [poolGids, setPoolGids] = useState(initPool);
+  const [nTrials,  setNTrials]  = useState(100);
+  const [goal,     setGoal]     = useState("survivors");
+  const [running,  setRunning]  = useState(false);
+  const [results,  setResults]  = useState(null);
+  const [error,    setError]    = useState(null);
+  const [elapsed,  setElapsed]  = useState(0);
+
+  // Budget = total population of variable warrs in the current ATK army
+  const budget = useMemo(
+    () => attData.warrs
+      .filter(w => !FORMATION_FIXED_GID_SET.has(w.gid))
+      .reduce((s, w) => s + w.count * popOf(w.gid), 0),
+    [attData.warrs]
+  );
+
+  const handleRun = async () => {
+    if (!poolGids.length || budget <= 0) return;
+    setRunning(true);
+    setError(null);
+    setResults(null);
+    const t0 = Date.now();
+    try {
+      const res = await fetch(`${simServer}/formation-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          report:        baseReport,
+          variable_gids: poolGids,
+          budget,
+          n_trials:      nTrials,
+          goal,
+          seed:          5000,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Formation test failed");
+      setElapsed(Date.now() - t0);
+      setResults(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleApply = (r) => {
+    const fixedWarrs = attData.warrs.filter(w => FORMATION_FIXED_GID_SET.has(w.gid));
+    const varWarrs   = Object.entries(r.composition)
+      .map(([gid, count]) => ({ gid: Number(gid), count }));
+    onApply([...varWarrs, ...fixedWarrs]);
+  };
+
+  const TRIAL_OPTS = [50, 100, 200, 500];
+  const GOAL_OPTS  = [
+    { key: "survivors",  label: "Max Survivors" },
+    { key: "kill_ratio", label: "Max Kills"     },
+    { key: "frames",     label: "Fastest Win"   },
+  ];
+
+  const poolOptions = useMemo(
+    () => ARMY_OPTIONS.filter(o => !FORMATION_FIXED_GID_SET.has(o.gid) && !poolGids.includes(o.gid)),
+    [poolGids]
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Budget */}
+      <div className="flex items-center justify-between font-mono text-[10px]">
+        <span className="text-neutral-500 uppercase tracking-wider">Variable Budget</span>
+        <div className="flex items-center gap-2">
+          <span className="text-red-400">{fmt(Math.round(budget))} pop</span>
+          <button
+            onClick={() => setPoolGids(initPool())}
+            title="Reset pool to current army"
+            className="text-neutral-600 hover:text-neutral-400 transition-colors"
+          >
+            <RotateCcw size={10} />
+          </button>
+        </div>
+      </div>
+
+      {/* Troop pool */}
+      <div>
+        <div className="font-mono text-[9px] text-neutral-600 uppercase tracking-wider mb-1.5 px-1">
+          Troop Pool [{poolGids.length} types]
+        </div>
+        <div className="space-y-1">
+          {poolGids.map(gid => {
+            const opt = ARMY_OPTIONS.find(o => o.gid === gid);
+            return (
+              <div key={gid} className="flex items-center gap-1.5">
+                <div className="flex-1 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] text-neutral-300 truncate">
+                  {opt?.name ?? gid}
+                  <span className="text-neutral-600 ml-1">×{opt?.pop ?? 1}</span>
+                </div>
+                <button
+                  onClick={() => setPoolGids(p => p.filter(g => g !== gid))}
+                  className="h-7 w-7 shrink-0 flex items-center justify-center border border-neutral-700 hover:border-red-600 hover:text-red-400 text-neutral-600 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            );
+          })}
+          <GidPicker
+            value={null}
+            options={poolOptions}
+            accent="red"
+            variant="add"
+            addLabel="Add Troop Type"
+            onChange={gid => setPoolGids(p => [...p, gid])}
+          />
+        </div>
+      </div>
+
+      {/* Trial count */}
+      <div>
+        <div className="font-mono text-[9px] text-neutral-600 uppercase tracking-wider mb-1.5 px-1">
+          Trials
+        </div>
+        <div className="flex gap-1">
+          {TRIAL_OPTS.map(n => (
+            <button key={n} onClick={() => setNTrials(n)}
+              className={`flex-1 py-1 font-mono text-[10px] border transition-colors
+                ${nTrials === n
+                  ? "border-red-700 text-red-400 bg-red-950/30"
+                  : "border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-300"}`}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Goal */}
+      <div>
+        <div className="font-mono text-[9px] text-neutral-600 uppercase tracking-wider mb-1.5 px-1">
+          Optimize For
+        </div>
+        <div className="flex gap-1">
+          {GOAL_OPTS.map(g => (
+            <button key={g.key} onClick={() => setGoal(g.key)}
+              className={`flex-1 py-1 font-mono text-[10px] border transition-colors
+                ${goal === g.key
+                  ? "border-red-700 text-red-400 bg-red-950/30"
+                  : "border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-300"}`}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Run button */}
+      <button onClick={handleRun}
+        disabled={running || poolGids.length === 0 || budget <= 0}
+        className="w-full h-8 flex items-center justify-center gap-2 border border-red-800/60 hover:border-red-600 bg-red-950/30 hover:bg-red-950/50 font-mono text-[10px] uppercase tracking-wider text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        {running
+          ? <><Loader2 size={12} className="animate-spin" /> Testing {nTrials} formations…</>
+          : <><Play size={12} /> Run Formation Test</>}
+      </button>
+
+      {error && (
+        <div className="font-mono text-[10px] text-red-400 px-2 py-1.5 border border-red-900/50 bg-red-950/20">
+          {error}
+        </div>
+      )}
+
+      {/* Results */}
+      {results && (
+        <div>
+          <div className="flex items-center justify-between font-mono text-[9px] text-neutral-500 uppercase tracking-wider mb-1.5 px-1">
+            <span>{results.wins}/{results.n_trials} wins · top {results.results.length}</span>
+            <span>{(elapsed / 1000).toFixed(1)}s</span>
+          </div>
+          <div className="space-y-1 max-h-[32rem] overflow-y-auto pr-0.5">
+            {results.results.map((r, idx) => {
+              const isWin = r.winner === "attacker";
+              return (
+                <div key={idx}
+                  className={`border p-2 font-mono text-[10px] ${isWin ? "border-emerald-900/60 bg-emerald-950/10" : "border-neutral-800 bg-[#0a0a0a]"}`}>
+                  {/* Header row */}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-neutral-600">#{idx + 1}</span>
+                      <span className={isWin ? "text-emerald-400" : "text-red-500"}>
+                        {isWin ? "WIN" : "LOSS"}
+                      </span>
+                      <span className="text-neutral-400">
+                        {results.goal === "frames"
+                          ? `${r.frames}f`
+                          : `${(r.score * 100).toFixed(1)}%`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-neutral-600">{r.frames}f</span>
+                      {isWin && (
+                        <button onClick={() => handleApply(r)}
+                          className="px-2 py-0.5 border border-red-800 text-red-400 hover:bg-red-950/40 transition-colors text-[9px] tracking-wider uppercase">
+                          Apply
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Composition chips */}
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(r.composition).map(([gid, count]) => {
+                      const opt  = ARMY_OPTIONS.find(o => o.gid === Number(gid));
+                      const pop  = Math.round(count * (opt?.pop ?? 1));
+                      return (
+                        <span key={gid}
+                          className="inline-block px-1.5 py-0.5 border border-neutral-700 bg-neutral-800/50 text-neutral-400">
+                          {opt?.name ?? gid}{" "}
+                          <span className="text-neutral-500">{fmt(count)}</span>
+                          <span className="text-neutral-600 ml-0.5">({fmt(pop)}p)</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {/* ATK survivors (winning runs only) */}
+                  {isWin && r.atk_survivors.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {r.atk_survivors.map(s => {
+                        const opt = ARMY_OPTIONS.find(o => o.gid === s.gid);
+                        return (
+                          <span key={s.gid}
+                            className="inline-block px-1.5 py-0.5 border border-emerald-900/50 bg-emerald-950/20 text-emerald-400">
+                            {opt?.name ?? s.gid} {fmt(Math.round(s.count))}
+                            <span className="text-emerald-600 ml-0.5">({fmt(s.pop)}p)</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Player Panel ─────────────────────────────────────────────────────────
-function PlayerPanel({ role, data, onChange, lvVals = {} }) {
+function PlayerPanel({ role, data, onChange, lvVals = {}, ftProps = null }) {
   const isAtt = role === "attacker";
   const accent = isAtt ? "red" : "teal";
   const Icon = isAtt ? Swords : Shield;
@@ -2516,6 +2777,18 @@ function PlayerPanel({ role, data, onChange, lvVals = {} }) {
             })}
           </div>
         </Section>
+
+        {/* Formation Tester — ATK only */}
+        {isAtt && ftProps && (
+          <Section title="Formation Tester" defaultOpen={false} accent={accent}>
+            <FormationTester
+              attData={data}
+              baseReport={ftProps.baseReport}
+              simServer={ftProps.simServer}
+              onApply={(newWarrs) => update({ warrs: newWarrs })}
+            />
+          </Section>
+        )}
       </div>
     </div>
   );
@@ -3678,7 +3951,8 @@ export default function UmineBattleConsole() {
       <main className="p-4 flex gap-4 items-start">
         <div className="w-1/4 shrink-0">
           <PlayerPanel role="attacker" data={state.attacker} lvVals={lvVals.atk}
-            onChange={(p) => setState(prev => ({ ...prev, attacker: p }))} />
+            onChange={(p) => setState(prev => ({ ...prev, attacker: p }))}
+            ftProps={{ baseReport: report, simServer: SIM_SERVER }} />
         </div>
 
         {/* Battle Replay Visualization */}
