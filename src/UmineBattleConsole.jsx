@@ -1695,6 +1695,16 @@ const FORMATION_FIXED_GID_SET = new Set(
     .map(o => o.gid)
 );
 
+// These three must always be deployed — never variable, always shown explicitly in the UI.
+const FORMATION_ALWAYS_DEPLOY_GROUPS = [
+  "04. Titans — Bison / Source Spirit",
+  "04. Titans — Empress",
+  "05. Warplanes",
+];
+const FORMATION_ALWAYS_DEPLOY_GID_SET = new Set(
+  ARMY_OPTIONS.filter(o => FORMATION_ALWAYS_DEPLOY_GROUPS.includes(o.group)).map(o => o.gid)
+);
+
 const BA_TECH_OPTIONS = _buildOptions(
   (g) => (g >= 50397000 && g <= 50463000) && !OFFICER_BREAKTHROUGH_GIDS.has(g),
   (g) => {
@@ -2210,6 +2220,31 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
           </button>
         </div>
       </div>
+
+      {/* Always Deploy — Bison, Empress, Warplane */}
+      {(() => {
+        const always = attData.warrs.filter(w => FORMATION_ALWAYS_DEPLOY_GID_SET.has(w.gid) && w.count > 0);
+        if (!always.length) return null;
+        return (
+          <div>
+            <div className="font-mono text-[9px] text-neutral-600 uppercase tracking-wider mb-1.5 px-1">
+              Always Deployed
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {always.map(w => {
+                const opt = ARMY_OPTIONS.find(o => o.gid === w.gid);
+                return (
+                  <div key={w.gid}
+                    className="px-2 py-0.5 border border-amber-800/50 bg-amber-950/20 font-mono text-[9px] text-amber-500"
+                    title="Always deployed — never variable">
+                    {opt?.name ?? w.gid}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Troop pool */}
       <div>
