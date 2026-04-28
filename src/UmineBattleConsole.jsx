@@ -3056,27 +3056,6 @@ function BattleReplay({ externalReplay, onReplayLoad }) {
       .catch(() => {});
   }, []);
 
-  // ── File loading ──
-  const handleFile = useCallback((e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (data.version && data.frames?.length) {
-          setReplay(data);
-          setFrame(0);
-          setPlaying(false);
-          setSelectedId(null);
-          setHoveredId(null);
-          onReplayLoad?.(data);
-        }
-      } catch { /* ignore bad JSON */ }
-    };
-    reader.readAsText(file);
-  }, []);
-
   // ── Playback loop ──
   useEffect(() => {
     if (!playing || !replay) return;
@@ -3464,12 +3443,8 @@ function BattleReplay({ externalReplay, onReplayLoad }) {
           <span className="font-mono text-[10px] uppercase tracking-widest text-neutral-500 mb-4">
             Battle Replay
           </span>
-          <label className="cursor-pointer border border-dashed border-amber-700/50 hover:border-amber-600 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-amber-500 hover:bg-amber-950/30 transition-colors">
-            Load replay JSON
-            <input type="file" accept=".json" onChange={handleFile} className="hidden" />
-          </label>
-          <span className="font-mono text-[8px] text-neutral-600 mt-2">
-            py -m aoo_sim --config ... --battle ... --replay out.json
+          <span className="font-mono text-[9px] text-neutral-600">
+            Use the Load button in the toolbar to load a replay JSON
           </span>
         </div>
       </div>
@@ -3504,10 +3479,6 @@ function BattleReplay({ externalReplay, onReplayLoad }) {
               RNG:{replay.meta.rng_final}
             </span>
           )}
-          <label className="cursor-pointer font-mono text-[8px] uppercase tracking-wider text-neutral-600 hover:text-amber-500 transition-colors">
-            [load]
-            <input type="file" accept=".json" onChange={handleFile} className="hidden" />
-          </label>
         </div>
       </div>
 
@@ -3804,8 +3775,6 @@ export default function UmineBattleConsole() {
   const [simReplay, setSimReplay] = useState(null);
   const [simRunning, setSimRunning] = useState(false);
   const [simError, setSimError] = useState(null);
-  const [autoRun, setAutoRun] = useState(false);
-  const autoRunTimerRef = useRef(null);
 
   const report = useMemo(() => buildReport(state), [state]);
   const reportJson = useMemo(() => JSON.stringify(report, null, 2), [report]);
@@ -3909,31 +3878,6 @@ export default function UmineBattleConsole() {
     }
   };
 
-  // Auto-recalculate: fires 1.2 s after any state change when auto mode is on
-  useEffect(() => {
-    if (!autoRun) return;
-    clearTimeout(autoRunTimerRef.current);
-    autoRunTimerRef.current = setTimeout(async () => {
-      setSimRunning(true);
-      setSimError(null);
-      try {
-        const res = await fetch(`${SIM_SERVER}/simulate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(report),
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || "Sim failed");
-        setSimResult(data);
-        if (data.replay) setSimReplay(data.replay);
-      } catch (e) {
-        setSimError(e.message);
-      } finally {
-        setSimRunning(false);
-      }
-    }, 1200);
-    return () => clearTimeout(autoRunTimerRef.current);
-  }, [report, autoRun]);
 
   return (
     <div className="min-h-screen bg-[#080808] text-neutral-200" style={{
@@ -3975,15 +3919,7 @@ export default function UmineBattleConsole() {
               className="h-8 px-3 border border-amber-700/60 hover:border-amber-600 bg-amber-950/40 hover:bg-amber-950/60 font-mono text-[10px] uppercase tracking-wider text-amber-500 hover:text-amber-400 transition-colors flex items-center gap-1.5">
               <Download size={12} /> Download
             </button>
-            <button onClick={() => setAutoRun(a => !a)}
-              title="Auto-recalculate 1.2 s after any change"
-              className={`h-8 px-3 border font-mono text-[10px] uppercase tracking-wider transition-colors flex items-center gap-1.5
-                ${autoRun
-                  ? "border-emerald-700 text-emerald-400 bg-emerald-950/30"
-                  : "border-neutral-700 text-neutral-500 hover:border-neutral-500 hover:text-neutral-200"}`}>
-              Auto
-            </button>
-            <button onClick={handleRunSim} disabled={simRunning}
+<button onClick={handleRunSim} disabled={simRunning}
               className="h-8 px-3 border border-emerald-800/60 hover:border-emerald-600 bg-emerald-950/40 hover:bg-emerald-950/60 font-mono text-[10px] uppercase tracking-wider text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
               {simRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
               {simRunning ? "Running…" : "Run Sim"}
