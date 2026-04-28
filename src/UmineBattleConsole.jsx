@@ -3972,7 +3972,7 @@ export default function UmineBattleConsole() {
               <RotateCcw size={12} /> Reset
             </button>
             <label className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5 cursor-pointer">
-              <Upload size={12} /> Load
+              <Upload size={12} /> Load from PC
               <input type="file" accept=".json" onChange={handleHeaderLoad} className="hidden" />
             </label>
             <button onClick={() => setShowServerBrowser(v => !v)}
@@ -3981,7 +3981,7 @@ export default function UmineBattleConsole() {
                   ? "border-amber-700/60 bg-amber-950/40 text-amber-500"
                   : "border-neutral-700 hover:border-neutral-500 text-neutral-500 hover:text-neutral-200"
               }`}>
-              <Database size={12} /> Server
+              <Database size={12} /> Load from Server
             </button>
             <button onClick={() => setShowPayload(!showPayload)}
               className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5">
