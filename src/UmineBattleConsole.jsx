@@ -1678,6 +1678,12 @@ const ARMY_GID_SORT_KEY = (() => {
   return m;
 })();
 
+// Biochemical Zombies: fleet size is capped by the player's hospital/zombie limit.
+// Formation tester must never exceed the original report count.
+const ZOMBIE_GID_SET = new Set(
+  ARMY_OPTIONS.filter(o => o.group === "02. Middle — WPSkin_Warrior").map(o => o.gid)
+);
+
 // GIDs that are never varied in formation testing: titans, warplanes, robot bots
 const FORMATION_FIXED_GID_SET = new Set(
   ARMY_OPTIONS
@@ -2129,6 +2135,15 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     [attData.warrs]
   );
 
+  // Hard caps: Biochemical Zombies cannot exceed the original report count.
+  const maxCounts = useMemo(() => {
+    const caps = {};
+    for (const w of attData.warrs) {
+      if (ZOMBIE_GID_SET.has(w.gid)) caps[w.gid] = w.count;
+    }
+    return caps;
+  }, [attData.warrs]);
+
   const handleRun = async () => {
     if (!poolGids.length || budget <= 0) return;
     setRunning(true);
@@ -2146,6 +2161,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
           n_trials:      nTrials,
           goal,
           seed:          5000,
+          max_counts:    maxCounts,
         }),
       });
       const data = await res.json();
@@ -2203,11 +2219,17 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
         <div className="space-y-1">
           {poolGids.map(gid => {
             const opt = ARMY_OPTIONS.find(o => o.gid === gid);
+            const cap = maxCounts[gid];
             return (
               <div key={gid} className="flex items-center gap-1.5">
                 <div className="flex-1 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] text-neutral-300 truncate">
                   {opt?.name ?? gid}
                   <span className="text-neutral-600 ml-1">×{opt?.pop ?? 1}</span>
+                  {cap != null && (
+                    <span className="ml-1.5 text-amber-600" title="Fleet size cap — cannot exceed original report count">
+                      max {fmt(Math.round(cap))}
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => setPoolGids(p => p.filter(g => g !== gid))}
