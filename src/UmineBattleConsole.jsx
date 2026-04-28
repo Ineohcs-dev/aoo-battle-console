@@ -3745,9 +3745,10 @@ function BattleReplay({ externalReplay, onReplayLoad }) {
                                 <div className={`h-full rounded-sm ${accent}`} style={{ width: `${pct.toFixed(1)}%` }} />
                               </div>
                             </div>
-                            {/* Sub-rows: always show all tags for this group */}
+                            {/* Sub-rows: only show tags with actual kills */}
                             {grp.tags.map(t => {
                               const val = tags[t] || 0;
+                              if (val === 0) return null;
                               return (
                               <div key={t} className="flex items-center gap-1 pl-3 py-px">
                                 <div className="flex-1 font-mono text-[10px] text-neutral-400 truncate">{SOURCE_TAG_DISPLAY[t] || t}</div>
