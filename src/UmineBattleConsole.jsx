@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { Download, Copy, Send, Plus, Trash2, ChevronDown, ChevronRight, RotateCcw, FileJson, Shield, Swords, Search, X, Play, Loader2, Upload } from "lucide-react";
+import { Download, Copy, Send, Plus, Trash2, ChevronDown, ChevronRight, RotateCcw, FileJson, Shield, Swords, Search, X, Play, Loader2, Upload, Database, RefreshCw, Trash } from "lucide-react";
 
 /* ============================================================================
  * UMINE // BATTLE CONTROL CONSOLE
@@ -3776,6 +3776,13 @@ export default function UmineBattleConsole() {
   const [simRunning, setSimRunning] = useState(false);
   const [simError, setSimError] = useState(null);
 
+  // Server replay browser
+  const [showServerBrowser, setShowServerBrowser] = useState(false);
+  const [serverReplays, setServerReplays] = useState([]);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [serverSaving, setServerSaving] = useState(false);
+  const [saveLabel, setSaveLabel] = useState("");
+
   const report = useMemo(() => buildReport(state), [state]);
   const reportJson = useMemo(() => JSON.stringify(report, null, 2), [report]);
 
@@ -3856,6 +3863,67 @@ export default function UmineBattleConsole() {
     });
   }, []);
 
+  // ── Server replay storage ──────────────────────────────────────────────────
+  const fetchServerReplays = async () => {
+    setServerLoading(true);
+    try {
+      const res = await fetch(`${SIM_SERVER}/replays`);
+      const data = await res.json();
+      if (data.ok) setServerReplays(data.replays);
+    } catch { showToast("Server unreachable"); }
+    finally { setServerLoading(false); }
+  };
+
+  const loadServerReplay = async (name) => {
+    try {
+      const res = await fetch(`${SIM_SERVER}/replay/${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      setSimReplay(data.replay);
+      handleReplayLoad(data.replay);
+      showToast(`Loaded: ${name}`);
+      setShowServerBrowser(false);
+    } catch (e) { showToast(`Load failed: ${e.message}`); }
+  };
+
+  const deleteServerReplay = async (name) => {
+    if (!confirm(`Delete "${name}"?`)) return;
+    try {
+      const res = await fetch(`${SIM_SERVER}/replay/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      showToast(`Deleted: ${name}`);
+      setServerReplays(prev => prev.filter(r => r.name !== name));
+    } catch (e) { showToast(`Delete failed: ${e.message}`); }
+  };
+
+  const saveServerReplay = async () => {
+    if (!simReplay) return;
+    setServerSaving(true);
+    const ts = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
+    const winner = simReplay.meta?.winner ?? "unknown";
+    const label = saveLabel.trim() || `${ts} ${winner}`;
+    const safeName = label.replace(/[^a-zA-Z0-9\-_. ]/g, "_").slice(0, 80) + ".json";
+    const payload = { ...simReplay, meta: { ...simReplay.meta, label } };
+    try {
+      const res = await fetch(`${SIM_SERVER}/replay/${encodeURIComponent(safeName)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      showToast(`Saved: ${safeName}`);
+      setSaveLabel("");
+      fetchServerReplays();
+    } catch (e) { showToast(`Save failed: ${e.message}`); }
+    finally { setServerSaving(false); }
+  };
+
+  useEffect(() => {
+    if (showServerBrowser) fetchServerReplays();
+  }, [showServerBrowser]);
+
   const handleRunSim = async () => {
     setSimRunning(true);
     setSimError(null);
@@ -3907,6 +3975,14 @@ export default function UmineBattleConsole() {
               <Upload size={12} /> Load
               <input type="file" accept=".json" onChange={handleHeaderLoad} className="hidden" />
             </label>
+            <button onClick={() => setShowServerBrowser(v => !v)}
+              className={`h-8 px-3 border font-mono text-[10px] uppercase tracking-wider transition-colors flex items-center gap-1.5 ${
+                showServerBrowser
+                  ? "border-amber-700/60 bg-amber-950/40 text-amber-500"
+                  : "border-neutral-700 hover:border-neutral-500 text-neutral-500 hover:text-neutral-200"
+              }`}>
+              <Database size={12} /> Server
+            </button>
             <button onClick={() => setShowPayload(!showPayload)}
               className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5">
               <FileJson size={12} /> {showPayload ? "Hide" : "Preview"}
@@ -3928,6 +4004,75 @@ export default function UmineBattleConsole() {
         </div>
 
       </header>
+
+      {/* Server Replay Browser */}
+      {showServerBrowser && (
+        <section className="border-b border-neutral-800 bg-[#0c0c0c] px-4 py-3 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400 flex items-center gap-2">
+              <Database size={11} className="text-amber-600" /> Server Replays
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={fetchServerReplays} disabled={serverLoading}
+                className="h-6 w-6 flex items-center justify-center border border-neutral-700 hover:border-neutral-500 text-neutral-600 hover:text-neutral-300 transition-colors disabled:opacity-40">
+                <RefreshCw size={10} className={serverLoading ? "animate-spin" : ""} />
+              </button>
+              <button onClick={() => setShowServerBrowser(false)}
+                className="h-6 w-6 flex items-center justify-center border border-neutral-700 hover:border-neutral-500 text-neutral-600 hover:text-neutral-300 transition-colors">
+                <X size={10} />
+              </button>
+            </div>
+          </div>
+
+          {/* Save current replay */}
+          {simReplay && (
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[9px] text-neutral-600 uppercase shrink-0">Save current:</span>
+              <input
+                value={saveLabel}
+                onChange={e => setSaveLabel(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && saveServerReplay()}
+                placeholder={`${new Date().toISOString().slice(0,10)} ${simReplay.meta?.winner ?? "?"} · ${simReplay.meta?.frames ?? "?"} frames`}
+                className="flex-1 h-6 px-2 bg-neutral-900 border border-neutral-700 focus:border-neutral-500 font-mono text-[10px] text-neutral-300 placeholder-neutral-700 focus:outline-none"
+              />
+              <button onClick={saveServerReplay} disabled={serverSaving}
+                className="h-6 px-3 border border-emerald-800/60 bg-emerald-950/40 hover:bg-emerald-950/60 font-mono text-[9px] uppercase text-emerald-400 hover:text-emerald-300 transition-colors disabled:opacity-50 shrink-0">
+                {serverSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          )}
+
+          {/* Replay list */}
+          {serverLoading ? (
+            <div className="font-mono text-[9px] text-neutral-600 flex items-center gap-2">
+              <Loader2 size={10} className="animate-spin" /> Loading…
+            </div>
+          ) : serverReplays.length === 0 ? (
+            <div className="font-mono text-[9px] text-neutral-600">No replays saved yet.</div>
+          ) : (
+            <div className="flex flex-col gap-0.5 max-h-52 overflow-y-auto pr-1">
+              {serverReplays.map(r => (
+                <div key={r.name} className="flex items-center gap-2 px-2 py-1 bg-neutral-900/40 hover:bg-neutral-800/40 border border-neutral-800/60 group">
+                  <span className={`font-mono text-[9px] w-12 shrink-0 ${r.winner === "attacker" ? "text-emerald-500" : "text-red-400"}`}>
+                    {r.winner === "attacker" ? "ATK" : "DEF"}
+                  </span>
+                  <span className="font-mono text-[9px] text-neutral-500 w-16 shrink-0">{(r.frames ?? 0).toLocaleString()}f</span>
+                  <span className="font-mono text-[9px] text-neutral-400 flex-1 truncate" title={r.label || r.name}>{r.label || r.name}</span>
+                  <span className="font-mono text-[9px] text-neutral-700 shrink-0">{r.saved_at?.slice(0, 10)}</span>
+                  <button onClick={() => loadServerReplay(r.name)}
+                    className="h-5 px-2 border border-neutral-700 hover:border-amber-600 font-mono text-[8px] text-neutral-500 hover:text-amber-400 transition-colors shrink-0">
+                    Load
+                  </button>
+                  <button onClick={() => deleteServerReplay(r.name)}
+                    className="h-5 w-5 flex items-center justify-center border border-neutral-800 hover:border-red-800 text-neutral-700 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+                    <Trash size={9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Body */}
       <main className="p-4 flex gap-4 items-start">
