@@ -2194,7 +2194,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     onApply([...varWarrs, ...fixedWarrs]);
   };
 
-  const TRIAL_OPTS = [50, 100, 200, 500, 1000, 2000];
+  const TRIAL_OPTS = [100, 500, 1000, 2000, 5000, 10000];
   const GOAL_OPTS  = [
     { key: "survivors",  label: "Max Survivors" },
     { key: "kill_ratio", label: "Max Kills"     },
