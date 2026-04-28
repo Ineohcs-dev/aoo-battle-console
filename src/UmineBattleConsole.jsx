@@ -2129,21 +2129,23 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
       .filter(w => !FORMATION_FIXED_GID_SET.has(w.gid))
       .map(w => w.gid);
 
-  const [poolGids, setPoolGids] = useState(initPool);
-  const [nTrials,  setNTrials]  = useState(100);
-  const [goal,     setGoal]     = useState("survivors");
-  const [running,  setRunning]  = useState(false);
-  const [results,  setResults]  = useState(null);
-  const [error,    setError]    = useState(null);
-  const [elapsed,  setElapsed]  = useState(0);
+  const [poolGids,       setPoolGids]       = useState(initPool);
+  const [nTrials,        setNTrials]        = useState(100);
+  const [goal,           setGoal]           = useState("survivors");
+  const [running,        setRunning]        = useState(false);
+  const [results,        setResults]        = useState(null);
+  const [error,          setError]          = useState(null);
+  const [elapsed,        setElapsed]        = useState(0);
+  const [budgetOverride, setBudgetOverride] = useState(null); // null = use auto
 
-  // Budget = total population of variable warrs in the current ATK army
-  const budget = useMemo(
+  // Auto budget = total population of variable warrs in the current ATK army
+  const autoBudget = useMemo(
     () => attData.warrs
       .filter(w => !FORMATION_FIXED_GID_SET.has(w.gid))
       .reduce((s, w) => s + w.count * popOf(w.gid), 0),
     [attData.warrs]
   );
+  const budget = budgetOverride ?? autoBudget;
 
   // Hard caps: Biochemical Zombies cannot exceed the original report count.
   const maxCounts = useMemo(() => {
@@ -2207,17 +2209,39 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
   return (
     <div className="space-y-3">
       {/* Budget */}
-      <div className="flex items-center justify-between font-mono text-[10px]">
-        <span className="text-neutral-500 uppercase tracking-wider">Variable Budget</span>
-        <div className="flex items-center gap-2">
-          <span className="text-red-400">{fmt(Math.round(budget))} pop</span>
-          <button
-            onClick={() => setPoolGids(initPool())}
-            title="Reset pool to current army"
-            className="text-neutral-600 hover:text-neutral-400 transition-colors"
-          >
-            <RotateCcw size={10} />
-          </button>
+      <div className="font-mono text-[10px]">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-neutral-500 uppercase tracking-wider">Variable Budget</span>
+          <div className="flex items-center gap-1.5">
+            {budgetOverride !== null && (
+              <span className="text-neutral-700 text-[9px]">auto: {fmt(Math.round(autoBudget))}</span>
+            )}
+            <button
+              onClick={() => { setPoolGids(initPool()); setBudgetOverride(null); }}
+              title="Reset pool and budget to current army"
+              className="text-neutral-600 hover:text-neutral-400 transition-colors"
+            >
+              <RotateCcw size={10} />
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={1}
+            step={10000}
+            value={Math.round(budget)}
+            onChange={e => {
+              const v = parseInt(e.target.value, 10);
+              setBudgetOverride(isNaN(v) || v <= 0 ? null : v);
+            }}
+            className={`flex-1 h-7 px-2 bg-neutral-900 border font-mono text-[10px] text-right focus:outline-none ${
+              budgetOverride !== null
+                ? "border-amber-700/60 text-amber-400"
+                : "border-neutral-700 text-red-400"
+            }`}
+          />
+          <span className="text-neutral-600 shrink-0">pop</span>
         </div>
       </div>
 
