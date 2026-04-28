@@ -2144,13 +2144,16 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
   const budget = budgetOverride ?? autoBudget;
 
   // Hard caps: Biochemical Zombies cannot exceed the original report count.
-  const maxCounts = useMemo(() => {
+  // Frozen at section-open time (useState, not useMemo) so that clicking
+  // "Apply" with fewer zombies doesn't silently lower the fleet cap.
+  // Re-opens the section after loading a new report to refresh caps.
+  const [maxCounts] = useState(() => {
     const caps = {};
     for (const w of attData.warrs) {
       if (ZOMBIE_GID_SET.has(w.gid)) caps[w.gid] = w.count;
     }
     return caps;
-  }, [attData.warrs]);
+  });
 
   const handleRun = async () => {
     if (!poolGids.length || budget <= 0) return;
