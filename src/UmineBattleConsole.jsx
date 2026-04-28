@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { Download, Copy, Send, Plus, Trash2, ChevronDown, ChevronRight, RotateCcw, FileJson, Shield, Swords, Search, X, Play, Loader2 } from "lucide-react";
+import { Download, Copy, Send, Plus, Trash2, ChevronDown, ChevronRight, RotateCcw, FileJson, Shield, Swords, Search, X, Play, Loader2, Upload } from "lucide-react";
 
 /* ============================================================================
  * UMINE // BATTLE CONTROL CONSOLE
@@ -3840,6 +3840,26 @@ export default function UmineBattleConsole() {
     showToast("Reset to captured values");
   };
 
+  const handleHeaderLoad = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";          // reset so the same file can be reloaded
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.version && Array.isArray(data.frames)) {
+          setSimReplay(data);
+          handleReplayLoad(data);
+          showToast(`Replay loaded — ${data.frames.length} frames`);
+        } else {
+          showToast("Not a valid replay file");
+        }
+      } catch { showToast("Failed to parse JSON"); }
+    };
+    reader.readAsText(file);
+  };
+
   // ── Sync army panels when a replay is loaded ──
   const handleReplayLoad = useCallback((data) => {
     const { attacker, defender } = data.meta ?? {};
@@ -3939,6 +3959,10 @@ export default function UmineBattleConsole() {
               className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5">
               <RotateCcw size={12} /> Reset
             </button>
+            <label className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5 cursor-pointer">
+              <Upload size={12} /> Load
+              <input type="file" accept=".json" onChange={handleHeaderLoad} className="hidden" />
+            </label>
             <button onClick={() => setShowPayload(!showPayload)}
               className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5">
               <FileJson size={12} /> {showPayload ? "Hide" : "Preview"}
