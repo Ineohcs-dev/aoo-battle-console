@@ -2132,6 +2132,9 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
   const [results,        setResults]        = useState(null);
   const [error,          setError]          = useState(null);
   const [elapsed,        setElapsed]        = useState(0);
+  const [runPct,         setRunPct]         = useState(0);   // 0–100 progress estimate
+  const runT0 = useRef(0);
+  const runTimer = useRef(null);
   const [budgetOverride, setBudgetOverride] = useState(null); // null = use auto
 
   // Auto budget = total population of variable warrs in the current ATK army
@@ -2160,7 +2163,21 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     setRunning(true);
     setError(null);
     setResults(null);
+    setRunPct(0);
+
+    // Estimate total time: use previous run if available, else ~40ms/trial
+    const prevRate = elapsed > 0 && results?.n_trials
+      ? elapsed / results.n_trials
+      : 40;
+    const estMs = nTrials * prevRate;
+
     const t0 = Date.now();
+    runT0.current = t0;
+    runTimer.current = setInterval(() => {
+      const pct = Math.min(95, ((Date.now() - t0) / estMs) * 100);
+      setRunPct(pct);
+    }, 250);
+
     try {
       const res = await fetch(`${simServer}/formation-test`, {
         method: "POST",
@@ -2183,6 +2200,8 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     } catch (e) {
       setError(e.message);
     } finally {
+      clearInterval(runTimer.current);
+      setRunPct(0);
       setRunning(false);
     }
   };
@@ -2364,10 +2383,16 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
       {/* Run button */}
       <button onClick={handleRun}
         disabled={running || poolGids.length === 0 || budget <= 0}
-        className="w-full h-8 flex items-center justify-center gap-2 border border-red-800/60 hover:border-red-600 bg-red-950/30 hover:bg-red-950/50 font-mono text-[10px] uppercase tracking-wider text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-        {running
-          ? <><Loader2 size={12} className="animate-spin" /> Testing {nTrials} formations…</>
-          : <><Play size={12} /> Run Formation Test</>}
+        className="relative w-full h-8 flex items-center justify-center gap-2 border border-red-800/60 hover:border-red-600 bg-red-950/30 hover:bg-red-950/50 font-mono text-[10px] uppercase tracking-wider text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden">
+        {running && runPct > 0 && (
+          <div className="absolute inset-0 bg-red-800/25 transition-[width] duration-200 ease-linear"
+            style={{ width: `${runPct}%` }} />
+        )}
+        <span className="relative z-10 flex items-center gap-2">
+          {running
+            ? <><Loader2 size={12} className="animate-spin" /> Testing… {Math.round(runPct)}%</>
+            : <><Play size={12} /> Run Formation Test</>}
+        </span>
       </button>
 
       {error && (
