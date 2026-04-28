@@ -2127,6 +2127,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
   const [poolGids,       setPoolGids]       = useState(initPool);
   const [nTrials,        setNTrials]        = useState(100);
   const [goal,           setGoal]           = useState("survivors");
+  const [multiSeed,      setMultiSeed]      = useState(false);
   const [running,        setRunning]        = useState(false);
   const [results,        setResults]        = useState(null);
   const [error,          setError]          = useState(null);
@@ -2168,6 +2169,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
           n_trials:      nTrials,
           goal,
           seed:          5000,
+          extra_seeds:   multiSeed ? [12345, 99999] : [],
           max_counts:    maxCounts,
         }),
       });
@@ -2189,7 +2191,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     onApply([...varWarrs, ...fixedWarrs]);
   };
 
-  const TRIAL_OPTS = [50, 100, 200, 500];
+  const TRIAL_OPTS = [50, 100, 200, 500, 1000, 2000];
   const GOAL_OPTS  = [
     { key: "survivors",  label: "Max Survivors" },
     { key: "kill_ratio", label: "Max Kills"     },
@@ -2341,6 +2343,21 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
         </div>
       </div>
 
+      {/* Multi-seed validation toggle */}
+      <div className="flex items-center justify-between font-mono text-[10px]">
+        <span className="text-neutral-500 uppercase tracking-wider text-[9px]">Multi-Seed Validation</span>
+        <button
+          onClick={() => setMultiSeed(v => !v)}
+          className={`px-2 py-0.5 border transition-colors text-[9px] uppercase tracking-wider ${
+            multiSeed
+              ? "border-amber-700/60 text-amber-400 bg-amber-950/20"
+              : "border-neutral-700 text-neutral-600 hover:border-neutral-500 hover:text-neutral-400"
+          }`}
+        >
+          {multiSeed ? "ON — seeds 12345, 99999" : "OFF"}
+        </button>
+      </div>
+
       {/* Run button */}
       <button onClick={handleRun}
         disabled={running || poolGids.length === 0 || budget <= 0}
@@ -2360,12 +2377,56 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
       {results && (
         <div>
           <div className="flex items-center justify-between font-mono text-[9px] text-neutral-500 uppercase tracking-wider mb-1.5 px-1">
-            <span>{results.wins}/{results.n_trials} wins · top {results.results.length}</span>
+            <span>
+              {results.wins}/{results.n_trials} wins · top {results.results.length}
+              {results.extra_seeds?.length > 0 && (
+                <span className="ml-1.5 text-amber-600">· avg of {results.extra_seeds.length + 1} seeds</span>
+              )}
+            </span>
             <span>{(elapsed / 1000).toFixed(1)}s</span>
           </div>
+
+          {/* Convergence chart */}
+          {results.convergence?.length > 1 && (() => {
+            const pts  = results.convergence;
+            const maxT = pts[pts.length - 1].trial;
+            const maxB = Math.max(...pts.map(p => p.best), 0.0001);
+            const W = 320, H = 48, pad = { l: 4, r: 4, t: 4, b: 4 };
+            const iW = W - pad.l - pad.r;
+            const iH = H - pad.t - pad.b;
+            const tx = t => pad.l + (t / maxT) * iW;
+            const ty = b => pad.t + iH - (b / maxB) * iH;
+            const phase1x = tx(Math.round(results.n_trials * 0.60));
+            const polyline = pts.map(p => `${tx(p.trial).toFixed(1)},${ty(p.best).toFixed(1)}`).join(" ");
+            return (
+              <div className="mb-2">
+                <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-12 block" style={{ fontFamily: "monospace" }}>
+                  {/* Phase boundary */}
+                  <line x1={phase1x} y1={pad.t} x2={phase1x} y2={H - pad.b}
+                    stroke="#6b2f2f" strokeWidth="1" strokeDasharray="3,2" />
+                  <text x={phase1x + 2} y={pad.t + 7} fill="#7a3333" fontSize="6">evolve</text>
+                  {/* Score line */}
+                  <polyline points={polyline} fill="none" stroke="#16a34a" strokeWidth="1.2" />
+                  {/* Labels */}
+                  <text x={pad.l + 1} y={H - pad.b - 2} fill="#555" fontSize="6">trial 0</text>
+                  <text x={W - pad.r - 1} y={H - pad.b - 2} fill="#555" fontSize="6" textAnchor="end">
+                    {maxT}
+                  </text>
+                  <text x={W - pad.r - 1} y={pad.t + 7} fill="#4ade80" fontSize="6" textAnchor="end">
+                    {(maxB * 100).toFixed(1)}%
+                  </text>
+                </svg>
+              </div>
+            );
+          })()}
+
           <div className="space-y-1 max-h-[32rem] overflow-y-auto pr-0.5">
             {results.results.map((r, idx) => {
-              const isWin = r.winner === "attacker";
+              const isWin     = r.winner === "attacker";
+              const showAvg   = results.extra_seeds?.length > 0 && r.avg_score != null;
+              const scoreDisp = results.goal === "frames"
+                ? `${r.frames}f`
+                : `${(r.score * 100).toFixed(1)}%`;
               return (
                 <div key={idx}
                   className={`border p-2 font-mono text-[10px] ${isWin ? "border-emerald-900/60 bg-emerald-950/10" : "border-neutral-800 bg-[#0a0a0a]"}`}>
@@ -2376,11 +2437,12 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
                       <span className={isWin ? "text-emerald-400" : "text-red-500"}>
                         {isWin ? "WIN" : "LOSS"}
                       </span>
-                      <span className="text-neutral-400">
-                        {results.goal === "frames"
-                          ? `${r.frames}f`
-                          : `${(r.score * 100).toFixed(1)}%`}
-                      </span>
+                      <span className="text-neutral-400">{scoreDisp}</span>
+                      {showAvg && (
+                        <span className="text-amber-500" title="Average score across all seeds">
+                          avg {(r.avg_score * 100).toFixed(1)}%
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-neutral-600">{r.frames}f</span>
