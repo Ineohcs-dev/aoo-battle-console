@@ -2749,7 +2749,7 @@ function BattleReplay({ externalReplay, onReplayLoad }) {
 
   // ── Auto-load bundled replay on mount ──
   useEffect(() => {
-    fetch("/umine4_replay.json", { cache: 'no-store' })
+    fetch("/masahide_umine_replay.json", { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.version && data?.frames?.length) {
