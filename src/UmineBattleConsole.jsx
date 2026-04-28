@@ -3933,6 +3933,8 @@ export default function UmineBattleConsole() {
     showToast("Reset to captured values");
   };
 
+  const [importingBattle, setImportingBattle] = useState(false);
+
   const handleHeaderLoad = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3949,6 +3951,36 @@ export default function UmineBattleConsole() {
           showToast("Not a valid replay file");
         }
       } catch { showToast("Failed to parse JSON"); }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportBattle = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      let source;
+      try { source = JSON.parse(ev.target.result); }
+      catch { showToast("Failed to parse JSON"); return; }
+      setImportingBattle(true);
+      try {
+        const res = await fetch(`${SIM_SERVER}/generate-replay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(source),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "generate-replay failed");
+        setSimReplay(data.replay);
+        handleReplayLoad(data.replay);
+        showToast(`Saved as ${data.name} · ${data.winner.toUpperCase()} wins · ${data.frames}f`);
+      } catch (err) {
+        showToast(`Import failed: ${err.message}`);
+      } finally {
+        setImportingBattle(false);
+      }
     };
     reader.readAsText(file);
   };
@@ -4088,6 +4120,15 @@ export default function UmineBattleConsole() {
               className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5">
               <RotateCcw size={12} /> Reset
             </button>
+            <label className={`h-8 px-3 border font-mono text-[10px] uppercase tracking-wider transition-colors flex items-center gap-1.5 cursor-pointer ${
+              importingBattle
+                ? "border-violet-700/60 bg-violet-950/40 text-violet-400 cursor-wait"
+                : "border-violet-800/60 hover:border-violet-600 bg-violet-950/20 hover:bg-violet-950/40 text-violet-500 hover:text-violet-300"
+            }`} title="Import a raw Clay-decoded battle JSON — runs the sim and saves the replay automatically">
+              {importingBattle ? <Loader2 size={12} className="animate-spin" /> : <FileJson size={12} />}
+              {importingBattle ? "Importing…" : "Import Battle"}
+              <input type="file" accept=".json" onChange={handleImportBattle} className="hidden" disabled={importingBattle} />
+            </label>
             <label className="h-8 px-3 border border-neutral-700 hover:border-neutral-500 font-mono text-[10px] uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors flex items-center gap-1.5 cursor-pointer">
               <Upload size={12} /> Load from PC
               <input type="file" accept=".json" onChange={handleHeaderLoad} className="hidden" />
