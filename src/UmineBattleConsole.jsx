@@ -1556,6 +1556,7 @@ const OFFICER_BREAKTHROUGH_GIDS = new Set([
   50397431, // Rapid Strike (Cattie ac_skill 100859990)
   50397449, // Tactical Block (Simon ac_skill 100860000)
   50397458, // Weakness Blitz (Maria ac_skill 100860004)
+  50397469, // Airstrike (Tifa hero skill — ba_tech version)
   50397494, // Advanced Ammo (Eric ac_skill 100860006)
   50397506, // Energy Shield (Emily ac_skill 100860013)
   50462842, // Airstrike / Air Support (Tifa ac_skill 100859982)
@@ -1564,7 +1565,44 @@ const OFFICER_BREAKTHROUGH_GIDS = new Set([
   50462929, // Energy Prison (Selina ac_skill 100860007)
   50462948, // Energy Blade (Freya ac_skill 100860010)
   50462949, // Tracking Missile (Kay ac_skill 100860014)
+  50462950, // Rocket Turret
+  50462951, // Nano Swarm
   50462956, // Battlefield Forte (Erica ac_skill 100860016)
+]);
+
+// Zombie Skills — Biochem zombie-specific buff/spell GIDs
+const ZOMBIE_SKILL_GIDS = new Set([
+  50397362, // Biochemical Zombies Damage Taken Reduction
+  50397363, // Abundant Energy
+  50397364, // Blaster Cannon
+  50397447, // Corrupted Poison Fog
+]);
+
+// Island skills — Guard / Electrocution / Shield / Pierce
+const ISLAND_SKILL_GIDS = new Set([
+  50397448, // Pierce Armor
+  50397451, // Guard
+  50397452, // Electrocution-Target Takes Continuous Damage
+  50397453, // Electrocution-Reduces Target's Damage
+  50397454, // Electrocution-Target's Damage Taken Boost
+  50397455, // Electrocution-Trigger Rate Boost
+  50397456, // Guard's Honor
+  50397457, // Shield Breaker
+  50397468, // Energy Shield
+]);
+
+// Antiques — Rocket Turret, Nano Swarm
+const ANTIQUES_SKILL_GIDS = new Set([
+  50462950, // Rocket Turret
+  50462951, // Nano Swarm
+]);
+
+// Union of all "Skills" section GIDs — filtered out of ba_tech display
+const ALL_SKILLS_GIDS = new Set([
+  ...OFFICER_BREAKTHROUGH_GIDS,
+  ...ZOMBIE_SKILL_GIDS,
+  ...ISLAND_SKILL_GIDS,
+  ...ANTIQUES_SKILL_GIDS,
 ]);
 
 // Per-row block GIDs — hidden from ba_tech display (folded into combined All Troops Block)
@@ -1701,7 +1739,7 @@ const FORMATION_ALWAYS_DEPLOY_GID_SET = new Set(
 );
 
 const BA_TECH_OPTIONS = _buildOptions(
-  (g) => (g >= 50397000 && g <= 50463000) && !OFFICER_BREAKTHROUGH_GIDS.has(g),
+  (g) => (g >= 50397000 && g <= 50463000) && !ALL_SKILLS_GIDS.has(g),
   (g) => {
     if (g >= 50397213 && g <= 50397220) return "Row Attack / HP";
     if (g >= 50397245 && g <= 50397250) return "Damage To Rows";
@@ -1752,15 +1790,20 @@ const TITAN_SLOT_GID_SET = new Set(TITAN_OPTIONS.map(o => o.gid));
 const TITAN_EMPRESS_OPTS = TITAN_OPTIONS.filter(o => o.group.startsWith("Bison —"));
 const TITAN_BISON_OPTS   = TITAN_OPTIONS.filter(o => o.group.startsWith("Empress —"));
 
-// Officer Breakthrough Skills picker options — built from the dedicated GID set.
-// Each entry carries the same shape as other *_OPTIONS arrays for reuse in GidPicker.
-const OFFICER_OPTIONS = Array.from(OFFICER_BREAKTHROUGH_GIDS)
+// Skills section options — grouped into sub-categories for the GidPicker.
+const _skillGroup = (gid) => {
+  if (ZOMBIE_SKILL_GIDS.has(gid)) return "Zombie Skills";
+  if (ISLAND_SKILL_GIDS.has(gid)) return "Island";
+  if (ANTIQUES_SKILL_GIDS.has(gid)) return "Antiques";
+  return "Officer Breakthrough";
+};
+const SKILLS_OPTIONS = Array.from(ALL_SKILLS_GIDS)
   .map((gid) => ({
     gid,
     name: GID_NAMES[gid] || `GID ${gid}`,
-    group: "Officer Breakthrough Skills",
+    group: _skillGroup(gid),
   }))
-  .sort((a, b) => a.gid - b.gid);
+  .sort((a, b) => a.group.localeCompare(b.group) || a.gid - b.gid);
 
 // ─── Embedded battle data (extracted from 308219 umine5.json) ─────────────
 const INITIAL_DATA = {
@@ -2533,13 +2576,13 @@ function PlayerPanel({ role, data, onChange, lvVals = {}, ftProps = null }) {
   const update = (patch) => onChange({ ...data, ...patch });
   const { bison, empress } = useMemo(() => parseTitanBi(data.titan_b_i), [data.titan_b_i]);
   // Display-only sort of ba_tech by GID ascending; state order preserved for payload fidelity.
-  // Filters out titan-slot GIDs (→ Titan Equipment), officer breakthrough GIDs (→ own section),
+  // Filters out titan-slot GIDs (→ Titan Equipment), skills GIDs (→ Skills section),
   // per-row block GIDs, the two combined-block GIDs (→ "All Troops Block" row),
   // and titan/warplane stat GIDs that are now shown in their equipment panels.
   const sortedBaTech = useMemo(
     () => data.ba_tech
       .map((t, origIdx) => ({ ...t, origIdx }))
-      .filter((t) => !TITAN_SLOT_GID_SET.has(t.gid) && !OFFICER_BREAKTHROUGH_GIDS.has(t.gid)
+      .filter((t) => !TITAN_SLOT_GID_SET.has(t.gid) && !ALL_SKILLS_GIDS.has(t.gid)
         && !PER_ROW_BLOCK_GIDS.has(t.gid) && t.gid !== BLOCK_FLAT_GID && t.gid !== BLOCK_RATE_GID
         && !EMPRESS_TECH_GIDS.has(t.gid) && !BISON_TECH_GIDS.has(t.gid) && !WARPLANE_TECH_GIDS.has(t.gid))
       .sort((a, b) => a.gid - b.gid),
@@ -2721,54 +2764,63 @@ function PlayerPanel({ role, data, onChange, lvVals = {}, ftProps = null }) {
           </div>
         </Section>
 
-        {/* Officer Breakthrough Skills */}
-        <Section title="Officer Breakthrough Skills" count={OFFICER_OPTIONS.length} defaultOpen={false} accent={accent}>
+        {/* Skills */}
+        <Section title="Skills" count={SKILLS_OPTIONS.length} defaultOpen={false} accent={accent}>
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1">
               <div className="flex-1 min-w-0">Skill</div>
               <div className="w-14 shrink-0">Lv</div>
               <div className="w-24 shrink-0">Value</div>
             </div>
-            {OFFICER_OPTIONS.map((opt) => {
-              const entry = data.ba_tech.find(t => t.gid === opt.gid);
-              const isPresent = !!entry;
-              const currentLevel = entry?.level ?? 0;
-              // 0 = not unlocked; 1-based when present
-              const displayLevel = isPresent ? currentLevel + 1 : 0;
-              return (
-                <div key={opt.gid} className="flex items-center gap-1.5">
-                  <div className={`flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate ${!isPresent ? "text-neutral-600" : RNG_GIDS.has(opt.gid) ? "text-yellow-400" : "text-neutral-300"}`}
-                    title={opt.name}>
-                    {opt.name}
+            {SKILLS_OPTIONS.map((opt, oi) => {
+              const prevGroup = oi > 0 ? SKILLS_OPTIONS[oi - 1].group : null;
+              const showHeader = opt.group !== prevGroup;
+              return (<React.Fragment key={opt.gid}>
+                {showHeader && (
+                  <div className="font-mono text-[9px] text-neutral-500 uppercase tracking-widest pt-2 pb-0.5 px-1 border-b border-neutral-800 mb-1">
+                    {opt.group}
                   </div>
-                  <div className="w-14 shrink-0">
-                    <NumInput
-                      value={displayLevel}
-                      min={0}
-                      onChange={v => {
-                        if (v <= 0) {
-                          // Remove from ba_tech (unlocking at 0 = not active)
-                          update({ ba_tech: data.ba_tech.filter(t => t.gid !== opt.gid) });
-                        } else {
-                          const newLevel = v - 1;
-                          const newValue = getLevelValue(opt.gid, newLevel);
-                          const idx = data.ba_tech.findIndex(t => t.gid === opt.gid);
-                          if (idx >= 0) {
-                            const next = [...data.ba_tech];
-                            next[idx] = { ...next[idx], level: newLevel, value: newValue };
-                            update({ ba_tech: next });
-                          } else {
-                            update({ ba_tech: [...data.ba_tech, { gid: opt.gid, value: newValue, level: newLevel }] });
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">
-                    {isPresent ? getLevelValue(opt.gid, currentLevel) : 0}
-                  </div>
-                </div>
-              );
+                )}
+                {(() => {
+                  const entry = data.ba_tech.find(t => t.gid === opt.gid);
+                  const isPresent = !!entry;
+                  const currentLevel = entry?.level ?? 0;
+                  const displayLevel = isPresent ? currentLevel + 1 : 0;
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      <div className={`flex-1 min-w-0 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] truncate ${!isPresent ? "text-neutral-600" : RNG_GIDS.has(opt.gid) ? "text-yellow-400" : "text-neutral-300"}`}
+                        title={opt.name}>
+                        {opt.name}
+                      </div>
+                      <div className="w-14 shrink-0">
+                        <NumInput
+                          value={displayLevel}
+                          min={0}
+                          onChange={v => {
+                            if (v <= 0) {
+                              update({ ba_tech: data.ba_tech.filter(t => t.gid !== opt.gid) });
+                            } else {
+                              const newLevel = v - 1;
+                              const newValue = getLevelValue(opt.gid, newLevel);
+                              const idx = data.ba_tech.findIndex(t => t.gid === opt.gid);
+                              if (idx >= 0) {
+                                const next = [...data.ba_tech];
+                                next[idx] = { ...next[idx], level: newLevel, value: newValue };
+                                update({ ba_tech: next });
+                              } else {
+                                update({ ba_tech: [...data.ba_tech, { gid: opt.gid, value: newValue, level: newLevel }] });
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="w-24 shrink-0 font-mono text-[11px] text-neutral-400 px-2">
+                        {isPresent ? getLevelValue(opt.gid, currentLevel) : 0}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </React.Fragment>);
             })}
           </div>
         </Section>
@@ -3114,7 +3166,7 @@ const SOURCE_TAG_DISPLAY = {
 // troops group has no static tags — rows are built dynamically from wty_* keys
 const KILL_GROUPS = [
   { key: 'troops',  label: 'Troops',      tags: [] },
-  { key: 'hero',    label: 'Officer Breakthrough Skills', tags: ['hero_airstrike', 'hero_empbomb', 'hero_doubleattack',
+  { key: 'hero',    label: 'Skills', tags: ['hero_airstrike', 'hero_empbomb', 'hero_doubleattack',
       'hero_4subdamage', 'hero_execute', 'hero_singletarget', 'hero_energyprison',
       'hero_aoeblast', 'hero_focusedstrikes', 'hero_periodic_single',
       'hero_multihit', 'hero_twotarget_midback'] },
