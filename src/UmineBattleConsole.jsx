@@ -2160,6 +2160,42 @@ function GidPicker({ value, onChange, options, accent = "amber", placeholder = "
   );
 }
 
+// ─── Player Specialization Detection ─────────────────────────────────────
+// Row-specific ba_tech GIDs: attack + HP + defense per row
+const ROW_SPEC_GIDS = {
+  melee:      [50397213, 50397214, 50397275],  // Melee Attack / HP / Defense
+  "mid-range":  [50397215, 50397216, 50397276],  // Mid-Range Attack / HP / Defense
+  "long-range": [50397217, 50397218, 50397277],  // Long-Range Attack / HP / Defense
+};
+
+function detectSpecialization(baTech) {
+  const sums = {};
+  for (const [row, gids] of Object.entries(ROW_SPEC_GIDS)) {
+    sums[row] = gids.reduce((s, gid) => {
+      const entry = baTech.find(t => t.gid === gid);
+      return s + (entry?.value ?? 0);
+    }, 0);
+  }
+  let best = "melee", bestVal = 0;
+  for (const [row, val] of Object.entries(sums)) {
+    if (val > bestVal) { best = row; bestVal = val; }
+  }
+  return best;
+}
+
+// ─── Saved Formations (localStorage) ─────────────────────────────────────
+const SAVED_FORMATIONS_KEY = "aoo_saved_formations";
+
+function loadSavedFormations() {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_FORMATIONS_KEY) || "[]");
+  } catch { return []; }
+}
+
+function saveSavedFormations(formations) {
+  localStorage.setItem(SAVED_FORMATIONS_KEY, JSON.stringify(formations));
+}
+
 // ─── Formation Tester ─────────────────────────────────────────────────────
 function FormationTester({ attData, baseReport, simServer, onApply }) {
   const initPool = () =>
@@ -2179,6 +2215,13 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
   const runT0 = useRef(0);
   const runTimer = useRef(null);
   const [budgetOverride, setBudgetOverride] = useState(null); // null = use auto
+  const [saved,          setSaved]          = useState(loadSavedFormations);
+  const [showSaved,      setShowSaved]      = useState(false);
+
+  const specialization = useMemo(
+    () => detectSpecialization(attData.ba_tech),
+    [attData.ba_tech]
+  );
 
   // Auto budget = total population of variable warrs in the current ATK army
   const autoBudget = useMemo(
@@ -2222,18 +2265,27 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     }, 250);
 
     try {
+      // Seed GA with saved formations that match the current pool
+      const seedComps = saved
+        .filter(s => {
+          const gids = Object.keys(s.composition).map(Number);
+          return gids.every(g => poolGids.includes(g));
+        })
+        .map(s => s.composition);
+
       const res = await fetch(`${simServer}/formation-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          report:        baseReport,
-          variable_gids: poolGids,
+          report:                baseReport,
+          variable_gids:         poolGids,
           budget,
-          n_trials:      nTrials,
+          n_trials:              nTrials,
           goal,
-          seed:          5000,
-          extra_seeds:   multiSeed ? [12345, 99999] : [],
-          max_counts:    maxCounts,
+          seed:                  5000,
+          extra_seeds:           multiSeed ? [12345, 99999] : [],
+          max_counts:            maxCounts,
+          initial_compositions:  seedComps.length ? seedComps : undefined,
         }),
       });
       const data = await res.json();
@@ -2254,6 +2306,28 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
     const varWarrs   = Object.entries(r.composition)
       .map(([gid, count]) => ({ gid: Number(gid), count }));
     onApply([...varWarrs, ...fixedWarrs]);
+  };
+
+  const handleSave = (r) => {
+    const entry = {
+      id: Date.now(),
+      composition: r.composition,
+      score: r.score,
+      frames: r.frames,
+      goal,
+      specialization,
+      nick: attData.nick || "Unknown",
+      date: new Date().toISOString().slice(0, 10),
+    };
+    const next = [entry, ...saved];
+    setSaved(next);
+    saveSavedFormations(next);
+  };
+
+  const handleDeleteSaved = (id) => {
+    const next = saved.filter(s => s.id !== id);
+    setSaved(next);
+    saveSavedFormations(next);
   };
 
   const TRIAL_OPTS = [100, 500, 1000, 2000, 5000, 10000];
@@ -2305,6 +2379,16 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
           />
           <span className="text-neutral-600 shrink-0">pop</span>
         </div>
+      </div>
+
+      {/* Player specialization badge */}
+      <div className="font-mono text-[9px] text-neutral-600 uppercase tracking-wider px-1 flex items-center gap-2">
+        <span>Player Type:</span>
+        <span className={
+          specialization === "long-range" ? "text-blue-400" :
+          specialization === "mid-range"  ? "text-orange-400" :
+          "text-red-400"
+        }>{specialization}</span>
       </div>
 
       {/* Always Deploy — Bison, Empress, Warplane */}
@@ -2444,6 +2528,65 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
         </div>
       )}
 
+      {/* Saved Formations */}
+      {saved.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowSaved(v => !v)}
+            className="flex items-center gap-1.5 font-mono text-[9px] text-neutral-500 uppercase tracking-wider px-1 hover:text-neutral-300 transition-colors w-full"
+          >
+            {showSaved ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            <Database size={10} />
+            Saved Formations [{saved.length}]
+          </button>
+          {showSaved && (
+            <div className="mt-1.5 space-y-1 max-h-60 overflow-y-auto pr-0.5">
+              {saved.map(s => (
+                <div key={s.id}
+                  className="border border-neutral-800 bg-[#0a0a0a] p-2 font-mono text-[10px]">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className={
+                        s.specialization === "long-range" ? "text-blue-400" :
+                        s.specialization === "mid-range"  ? "text-orange-400" :
+                        "text-red-400"
+                      }>{s.specialization}</span>
+                      <span className="text-emerald-400">
+                        {s.goal === "frames" ? `${s.frames}f` : `${(s.score * 100).toFixed(1)}%`}
+                      </span>
+                      <span className="text-neutral-600">{s.nick}</span>
+                      <span className="text-neutral-700">{s.date}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => handleApply({ composition: s.composition })}
+                        className="px-2 py-0.5 border border-red-800 text-red-400 hover:bg-red-950/40 transition-colors text-[9px] uppercase">
+                        Apply
+                      </button>
+                      <button onClick={() => handleDeleteSaved(s.id)}
+                        className="px-1 py-0.5 text-neutral-600 hover:text-red-400 transition-colors">
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(s.composition).map(([gid, count]) => {
+                      const opt = ARMY_OPTIONS.find(o => o.gid === Number(gid));
+                      return (
+                        <span key={gid}
+                          className="inline-block px-1.5 py-0.5 border border-neutral-700 bg-neutral-800/50 text-neutral-400">
+                          {opt?.name ?? GID_NAMES[Number(gid)] ?? `GID ${gid}`}{" "}
+                          <span className="text-neutral-500">{fmt(count)}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Results */}
       {results && (
         <div>
@@ -2517,12 +2660,17 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-neutral-600">{r.frames}f</span>
-                      {isWin && (
+                      {isWin && (<>
+                        <button onClick={() => handleSave(r)}
+                          title="Save this formation"
+                          className="px-2 py-0.5 border border-amber-800 text-amber-500 hover:bg-amber-950/40 transition-colors text-[9px] tracking-wider uppercase">
+                          Save
+                        </button>
                         <button onClick={() => handleApply(r)}
                           className="px-2 py-0.5 border border-red-800 text-red-400 hover:bg-red-950/40 transition-colors text-[9px] tracking-wider uppercase">
                           Apply
                         </button>
-                      )}
+                      </>)}
                     </div>
                   </div>
                   {/* Composition chips */}
