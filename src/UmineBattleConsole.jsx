@@ -2323,7 +2323,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
                   <div key={w.gid}
                     className="px-2 py-0.5 border border-amber-800/50 bg-amber-950/20 font-mono text-[9px] text-amber-500"
                     title="Always deployed — never variable">
-                    {opt?.name ?? w.gid}
+                    {opt?.name ?? GID_NAMES[w.gid] ?? `GID ${w.gid}`}
                   </div>
                 );
               })}
@@ -2344,7 +2344,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
             return (
               <div key={gid} className="flex items-center gap-1.5">
                 <div className="flex-1 font-mono text-[10px] px-2 py-1 border border-neutral-700 bg-[#0a0a0a] text-neutral-300 truncate">
-                  {opt?.name ?? gid}
+                  {opt?.name ?? GID_NAMES[gid] ?? `GID ${gid}`}
                   <span className="text-neutral-600 ml-1">×{opt?.pop ?? 1}</span>
                   {cap != null && (
                     <span className="ml-1.5 text-amber-600" title="Fleet size cap — cannot exceed original report count">
@@ -2533,7 +2533,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
                       return (
                         <span key={gid}
                           className="inline-block px-1.5 py-0.5 border border-neutral-700 bg-neutral-800/50 text-neutral-400">
-                          {opt?.name ?? gid}{" "}
+                          {opt?.name ?? GID_NAMES[Number(gid)] ?? `GID ${gid}`}{" "}
                           <span className="text-neutral-500">{fmt(count)}</span>
                           <span className="text-neutral-600 ml-0.5">({fmt(pop)}p)</span>
                         </span>
@@ -2548,7 +2548,7 @@ function FormationTester({ attData, baseReport, simServer, onApply }) {
                         return (
                           <span key={s.gid}
                             className="inline-block px-1.5 py-0.5 border border-emerald-900/50 bg-emerald-950/20 text-emerald-400">
-                            {opt?.name ?? s.gid} {fmt(Math.round(s.count))}
+                            {opt?.name ?? GID_NAMES[s.gid] ?? WTYPE_DISPLAY_NAMES[s.wtype] ?? `GID ${s.gid}`} {fmt(Math.round(s.count))}
                             <span className="text-emerald-600 ml-0.5">({fmt(s.pop)}p)</span>
                           </span>
                         );
@@ -3000,6 +3000,7 @@ function PlayerPanel({ role, data, onChange, lvVals = {}, ftProps = null }) {
         {isAtt && ftProps && (
           <Section title="Formation Tester" defaultOpen={false} accent={accent}>
             <FormationTester
+              key={data.id}
               attData={data}
               baseReport={ftProps.baseReport}
               simServer={ftProps.simServer}
